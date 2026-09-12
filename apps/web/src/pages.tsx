@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Download, FileText, FolderArchive, Image, List, Mail, PencilLine, Plus, RotateCcw, Search, Settings2, Shuffle, Sprout, Trash2, Upload } from 'lucide-react';
-import { localDate, reflectionSchema, type AppStats, type BackupInfo, type CalendarData, type Metadata, type RecordItem, type RecordList } from '@yearbook/shared';
+import { localDate, reflectionSchema, type AppStats, type BackupInfo, type CalendarData, type Metadata, type RecordItem, type RecordList, type YearbookList } from '@yearbook/shared';
 import { api, errorText, fileSize, readableDate, readableTime, useResource } from './api';
 import { EmptyState, ErrorNotice, Loading, PageHeading, PhotoViewer, RecordCard, StatusNotice } from './components';
 import { ModelsPanel } from './ModelsPanel';
 import { AiRecordActions } from './AiEntryPoints';
+import { HomeLetterNotice } from './LetterPages';
 
 export function HomePage() {
   const stats = useResource<AppStats>('/api/stats');
   const recent = useResource<RecordList>('/api/records?limit=4');
+  const books = useResource<YearbookList>('/api/yearbooks?limit=500');
+  const latestBook = books.data?.items.reduce<(NonNullable<typeof books.data>['items'][number]) | undefined>((latest, book) => !latest || book.updatedAt > latest.updatedAt ? book : latest, undefined);
   const today = localDate();
   const now = new Date();
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -18,8 +21,9 @@ export function HomePage() {
     <PageHeading title="今天，想留住什么？" description="一顿家常饭，一次远行，或是普通的一天。" />
     <div className="home-opening">
       <section className="new-note"><div className="note-topline"><PencilLine size={24} strokeWidth={1.5} /><span>从这一页开始</span></div><h2>写一点，<br />以后慢慢翻。</h2><p>不必等到有什么大事。<br />一句话，一张照片，都值得留下。</p><Link to="/records/new" className="button primary"><Plus size={20} />记一笔</Link><span className="note-folio" aria-hidden="true">{today.replaceAll('-', ' / ')}</span></section>
-      <div className="home-side"><section className="memory-invitation"><Shuffle size={24} strokeWidth={1.5} /><h2>翻一段旧记忆</h2><p>{stats.data?.records ? '让一个记过的日子，重新来到眼前。' : '写下第一条记录后，就能在这里偶遇过去。'}</p><Link to="/memories" className="text-link">打开记忆盲盒<ArrowRight size={20} /></Link></section><section className="book-invitation"><div className="section-title"><h2>我的年册</h2><BookOpen size={20} strokeWidth={1.5} /></div><p>把散落的日子，慢慢收成一本。</p><Link to="/yearbooks" className="text-link">查看编册进度<ArrowRight size={20} /></Link><small>手动编册、离线导出，也可请助理整理草稿</small></section></div>
+      <div className="home-side"><section className="memory-invitation"><Shuffle size={24} strokeWidth={1.5} /><h2>翻一段旧记忆</h2><p>{stats.data?.records ? '让一个记过的日子，重新来到眼前。' : '写下第一条记录后，就能在这里偶遇过去。'}</p><Link to="/memories" className="text-link">打开记忆盲盒<ArrowRight size={20} /></Link></section><section className="book-invitation"><div className="section-title"><h2>我的年册</h2><BookOpen size={20} strokeWidth={1.5} /></div><p>{latestBook ? latestBook.title || `${latestBook.year} 年的日子` : '把散落的日子，慢慢收成一本。'}</p><Link to={latestBook ? `/yearbooks/${latestBook.id}/edit` : '/yearbooks'} className="text-link">{latestBook ? '继续编辑年册' : '开始手动编册'}<ArrowRight size={20} /></Link><small>手动编册、离线导出，也可请助理整理草稿</small></section></div>
     </div>
+    <HomeLetterNotice />
     <section className="recent-section"><div className="section-title"><h2>最近记下的日子</h2><Link to="/records" className="text-link">全部记录<ArrowRight size={16} /></Link></div><ErrorNotice message={recent.error} retry={recent.reload} />{recent.loading ? <Loading /> : recent.data?.items.length ? <div className="home-records">{recent.data.items.map(record => <RecordCard key={record.id} record={record} compact />)}</div> : !recent.error && <div className="home-empty"><span className="empty-stroke" aria-hidden="true" /><p>这里还空着，留给你的日子。</p><Link to="/records/new" className="text-link">写下第一笔<ArrowRight size={16} /></Link></div>}</section>
     <div className="home-bottom"><p>{stats.data ? <>已留下 <strong>{stats.data.records}</strong> 条记录、<strong>{stats.data.photos}</strong> 张照片</> : '生活素材保存在这台电脑里'}</p><Link to="/settings" className="text-link"><FolderArchive size={16} />备份这段时光</Link></div><ErrorNotice message={stats.error} retry={stats.reload} />
   </>;
@@ -179,17 +183,6 @@ export function SettingsPage() {
     <ModelsPanel key={libraryRevision} />
     <section className="settings-section"><div className="section-title"><h2>误删的记录</h2><button className="button secondary" onClick={() => navigate('/trash')}><Trash2 size={16} />打开回收站</button></div><p className="helper">记录移入回收站后仍然保留，照片不会因删除一个关联而丢失。</p></section>
   </>;
-}
-
-const stageCopy = {
-  yearbooks: { title: '我的年册', intro: '把一年的日子，整理成可以留下的一本。', icon: BookOpen, stage: '下一节点：手动年册', body: '本节点先完成了记录与回顾。年册结构、章节编辑、照片选集、离线 HTML 和 PDF 导出将在下一节点开发。', details: ['同一年可以保存多本年册草稿', '手动选择素材、章节与照片', '断网也能编册、预览和导出'] },
-  reports: { title: '月末小报', intro: '月底再看一眼，这个月留下些什么。', icon: FileText, stage: '后续节点：AI 整理', body: '月报编辑与生成尚未接入。完成模型配置后，这里将从你选定月份的真实记录里整理回顾，并保留来源链接。', details: ['当月值得记住的几件事', '从已有照片中选择小小影集', '保留原话，回顾可以继续编辑'] },
-  letters: { title: '给未来的信', intro: '写给以后某一天，再来读这封信的自己。', icon: Mail, stage: '后续节点：未来信件', body: '信件编写与到期阅读尚未接入。完成后会在每次启动或访问时检查查看日期，关闭程序期间无需保持后台运行。', details: ['写信、附照片、选择查看日期', '到期后在首页提醒', '未到期信件不会进入普通回顾或 AI 素材'] },
-  tasks: { title: '开发与任务进度', intro: '当前为第一个交付节点：记录与回顾。', icon: Check, stage: '节点一 · 25%', body: '真实后台任务系统尚未接入。目前照片导入、备份恢复会在操作位置显示执行状态。后续的导出与 AI 任务将在这里统一管理。', details: ['已实现：记录、照片、回顾、日历、搜索', '已实现：记忆盲盒、生活第一次、回收站、备份恢复', '后续实现：年册与导出、模型接口、AI 和 Agent、未来信件'] },
-};
-export function StagePage({ kind }: { kind: keyof typeof stageCopy }) {
-  const copy = stageCopy[kind]; const Icon = copy.icon;
-  return <><PageHeading title={copy.title} description={copy.intro} /><section className="stage-page"><Icon size={32} strokeWidth={1.3} /><p className="stage-label">{copy.stage}</p><h2>这部分正在后续计划中</h2><p>{copy.body}</p><ul>{copy.details.map(detail => <li key={detail}>{detail}</li>)}</ul><Link to="/records" className="button secondary">先翻翻已有的记录<ArrowRight size={16} /></Link></section></>;
 }
 
 export function NotFoundPage() { return <EmptyState title="这一页还没写下" description="找不到这个页面，可以回到首页继续。" action={<Link to="/" className="button primary">回到首页<ArrowRight size={16} /></Link>} />; }

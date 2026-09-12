@@ -4,7 +4,17 @@ globalThis.Y = ${JSON.stringify(data)};
 Y.originalTitle = '六月和妈妈去河边';
 Y.originalBody = '和妈妈沿着河边慢慢走。妈妈说：“晚饭回家吃面吧。”我拍了河面和路边的树。';
 Y.manualBody = '手动编册，留下六月这一天。' + '记得那天的河水很安静，照片和原话都留在这一页。'.repeat(18);
-globalThis.go = async path => { await page.goto(new URL(path, Y.base).href, {waitUntil:'domcontentloaded'}); };
+globalThis.chapterContent = chapters => chapters.map(({id,createdAt,updatedAt,...chapter}) => ({...chapter,blocks:chapter.blocks.map(({id,createdAt,updatedAt,...block}) => block)}));
+// Only the test-owned pages receive this override; user extension settings are untouched.
+globalThis.paperTheme = async target => {
+  await target.evaluate(() => {
+    if (!document.querySelector('meta[name="darkreader-lock"]')) { const lock = document.createElement('meta'); lock.name = 'darkreader-lock'; document.head.append(lock); }
+    for (const style of document.querySelectorAll('style.darkreader, link.darkreader')) style.remove();
+    document.documentElement.removeAttribute('data-darkreader-scheme');
+    document.documentElement.removeAttribute('data-darkreader-mode');
+  });
+};
+globalThis.go = async path => { await page.goto(new URL(path, Y.base).href, {waitUntil:'domcontentloaded'}); await paperTheme(page); };
 globalThis.read = async path => { const res = await context.request.get(new URL(path, Y.base).href); assert.ok(res.ok(), path + ': ' + res.status()); return res.json(); };
 globalThis.completeDraft = async (title = '本机模拟整理') => {
   await page.waitForURL(/\/tasks\?task=/);
@@ -121,11 +131,13 @@ await chapter.getByLabel('关联记录').selectOption(Y.recordId);
 await page.getByRole('button', {name:'保存年册',exact:true}).click();
 await page.waitForURL(/\/yearbooks\/[a-f0-9-]+\/edit$/);
 Y.bookId = page.url().split('/').at(-2);
+Y.manualChapterId = (await read('/api/yearbooks/' + Y.bookId)).chapters[0].id;
 await expect(page.getByLabel('年册标题')).toHaveValue('我们的 2024 · 手工年册');
-await page.getByRole('link', {name:'预览',exact:true}).click();
-await expect(page.locator('.preview-body')).toHaveText(Y.manualBody);
-await expect(page.locator('.yearbook-preview img')).toHaveCount(4);
-await page.waitForFunction(() => [...document.querySelectorAll('.yearbook-preview img')].every(img => img.complete && img.naturalWidth > 0));
+await page.getByRole('button', {name:'预览',exact:true}).click();
+const preview = page.frameLocator('iframe');
+await expect(preview.locator('.chapter-body').filter({hasText:Y.manualBody})).toHaveText(Y.manualBody);
+await expect(preview.locator('img')).toHaveCount(5);
+await expect(page.getByRole('button',{name:'打印年册',exact:true})).toBeEnabled();
 assert.equal((await read('/api/yearbooks/' + Y.bookId)).chapters.length,1);
 return {yearbookId:Y.bookId,manual:true,preview:true};
 `,
@@ -142,15 +154,18 @@ Y.offlinePage = offline;
 try {
   await context.setOffline(true);
   await offline.goto(Y.offlineUrl,{waitUntil:'load'});
+  await paperTheme(offline);
   await expect(offline.getByRole('heading',{name:'我们的 2024 · 手工年册',exact:true})).toBeVisible();
-  await expect(offline.locator('.chapter-body')).toHaveText(Y.manualBody);
-  await expect(offline.locator('img')).toHaveCount(3);
-  const sizes = await offline.locator('figure img').evaluateAll(items => items.map(img => ({natural:[img.naturalWidth,img.naturalHeight],shown:[img.width,img.height],complete:img.complete})));
+  await expect(offline.locator('.chapter-body').filter({hasText:Y.manualBody})).toHaveText(Y.manualBody);
+  await expect(offline.locator('img')).toHaveCount(5);
+  await offline.evaluate(() => document.fonts.ready);
+  const sizes = await offline.locator('figure img').evaluateAll(items => items.map(img => ({natural:[img.naturalWidth,img.naturalHeight],shown:[img.width,img.height],complete:img.complete,fit:getComputedStyle(img).objectFit})));
   assert.ok(sizes.every(photo => photo.complete && photo.natural[0] > 0));
   assert.ok(sizes.some(photo => photo.natural[0] > photo.natural[1]));
   assert.ok(sizes.some(photo => photo.natural[0] < photo.natural[1]));
-  assert.ok(sizes.every(photo => Math.abs(photo.shown[0]/photo.shown[1] - photo.natural[0]/photo.natural[1]) < .02));
-  await offline.locator('.chapter').scrollIntoViewIfNeeded();
+  assert.ok(sizes.every(photo => photo.fit === 'contain' || Math.abs(photo.shown[0]/photo.shown[1] - photo.natural[0]/photo.natural[1]) < .02));
+  assert.ok(await offline.evaluate(() => [...document.fonts].some(font => font.status === 'loaded' && font.family.includes('Yearbook'))));
+  await offline.locator('.chapter').filter({hasText:Y.manualBody}).scrollIntoViewIfNeeded();
   return {offlineHtmlReadable:true,chineseBody:true,photosLoaded:true,orientations:sizes};
 } finally { await context.setOffline(false); }
 `,
@@ -240,12 +255,14 @@ assert.notEqual(Y.regeneratedId,Y.monthlyId);
 await go('/ai/drafts/' + Y.monthlyId);
 await expect(page.getByLabel('草稿标题')).toHaveValue('六月小报 · 手动留字');
 await expect(page.getByLabel('段落 1')).toHaveValue(Y.monthlyBody);
+Y.beforeMonthlyChapters = (await read('/api/yearbooks/' + Y.bookId)).chapters.map(chapter => chapter.id);
 await page.getByLabel('采用到').selectOption(Y.bookId);
 await page.getByRole('button',{name:'采用为年册章节',exact:true}).click();
 await page.waitForURL(/\/yearbooks\/.*\/edit$/);
-await expect(page.locator('.chapter-editor').first().getByLabel('章节正文')).toHaveValue(Y.manualBody);
+await expect(page.locator('[data-chapter-id="' + Y.manualChapterId + '"]').getByLabel('章节正文')).toHaveValue(Y.manualBody);
 const book = await read('/api/yearbooks/' + Y.bookId);
-assert.ok(JSON.stringify(book).includes(Y.monthlyBody)); assert.equal(book.chapters.length,2);
+assert.ok(JSON.stringify(book).includes(Y.monthlyBody)); assert.equal(book.chapters.length,Y.beforeMonthlyChapters.length + 1);
+assert.deepEqual(book.chapters.slice(0,-1).map(chapter => chapter.id),Y.beforeMonthlyChapters);
 return {newDraftPreservedOld:true,appendedChapter:true,manualYearbookPreserved:true};
 `,
 agent: String.raw`
@@ -265,6 +282,7 @@ return {agent:true,mode:draft.mode,toolCalls:detail.task.toolCalls,selectedSourc
 `,
 annual: String.raw`
 await go('/yearbooks/' + Y.bookId + '/edit');
+Y.beforeAnnual = await read('/api/yearbooks/' + Y.bookId);
 await page.getByRole('link',{name:'生成全年 AI 草稿',exact:true}).click();
 await page.getByLabel('模型配置').selectOption(Y.responsesId);
 await page.getByRole('button',{name:'生成独立草稿',exact:true}).click();
@@ -285,7 +303,15 @@ for (const version of versions) {
 assert.ok(preserved,'采用整册前的手动内容必须保留在版本中');
 await page.locator('.version-list li').filter({hasText:'第 ' + preserved.versionNo + ' 个版本 ·'}).getByRole('button',{name:'采用此版本',exact:true}).click();
 await expect(page.getByRole('status').filter({hasText:'已采用第 ' + preserved.versionNo + ' 个版本'})).toBeVisible();
-await expect(page.locator('.chapter-editor').first().getByLabel('章节正文')).toHaveValue(Y.manualBody);
+const restored = await read('/api/yearbooks/' + Y.bookId);
+const manualChapter = restored.chapters.find(chapter => chapter.body === Y.manualBody);
+assert.ok(manualChapter,'恢复版本应保留手动章节正文');
+Y.manualChapterId = manualChapter.id;
+await expect(page.locator('[data-chapter-id="' + Y.manualChapterId + '"]').getByLabel('章节正文')).toHaveValue(Y.manualBody);
+assert.equal(restored.title,Y.beforeAnnual.title);
+assert.equal(restored.template,Y.beforeAnnual.template);
+assert.equal(restored.coverMediaId,Y.beforeAnnual.coverMediaId);
+assert.deepEqual(chapterContent(restored.chapters),chapterContent(Y.beforeAnnual.chapters));
 return {batchedYearbook:true,stages:detail.stages.length,adoptionSnapshotRestored:true};
 `,
 fallback: String.raw`
@@ -343,7 +369,7 @@ await expect(page.getByRole('status').filter({hasText:'备份已保存'})).toBeV
 const href = await page.getByRole('link',{name:/下载/}).first().getAttribute('href');
 const res = await context.request.get(new URL(href,Y.base).href);
 assert.ok(res.ok()); const bytes = await res.body(); assert.equal(bytes.subarray(0,2).toString(),'PK');
-const backupFile = artifactPath('yearbook-stage75-backup.zip');
+const backupFile = artifactPath('yearbook-final-backup.zip');
 await (await import('node:fs/promises')).writeFile(backupFile,bytes);
 await page.getByLabel('选择备份文件').setInputFiles(backupFile);
 await page.getByLabel(/我了解恢复会将当前资料库替换为这份备份/).check();

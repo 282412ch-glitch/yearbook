@@ -7,6 +7,7 @@ import { isLocalDate } from '@yearbook/shared';
 import type { DataStore } from './db.js';
 import { AppError } from './errors.js';
 import { presentMedia, type MediaRow } from './records.js';
+import { authorizeLetterPhotoReimport } from './letters.js';
 
 const formats: Record<string, { extension: string; mime: string }> = {
   jpeg: { extension: 'jpg', mime: 'image/jpeg' }, png: { extension: 'png', mime: 'image/png' },
@@ -45,7 +46,11 @@ export async function importMedia(store: DataStore, buffer: Buffer, rawFilename:
   if (!buffer.length || buffer.length > MAX_PHOTO_BYTES) throw new AppError(413, 'PHOTO_SIZE', '每张照片需大于 0 字节且不超过 25 MB');
   const hash = createHash('sha256').update(buffer).digest('hex');
   const existing = store.db.prepare('SELECT * FROM media WHERE hash = ?').get(hash) as MediaRow | undefined;
-  if (existing) return { item: presentMedia(existing), duplicate: true };
+  if (existing) {
+    // Only a full hash-matching upload may re-use a photo hidden by a sealed future letter.
+    authorizeLetterPhotoReimport(store, existing.id);
+    return { item: presentMedia(existing), duplicate: true };
+  }
   let original: Metadata;
   let display: Buffer;
   let thumbnail: Buffer;

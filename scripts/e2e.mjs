@@ -11,6 +11,7 @@ import AdmZip from 'adm-zip';
 import sharp from 'sharp';
 import { root, checkNode, hash, waitForService, stopService } from './runtime.mjs';
 import { initialise, flows } from './e2e-flows.mjs';
+import { finalFlows } from './e2e-final-flows.mjs';
 
 checkNode();
 const serverEntry = resolve(root, 'apps/server/dist/index.js');
@@ -19,7 +20,7 @@ const launcher = process.platform === 'win32'
   ? resolve(process.env.LOCALAPPDATA ?? '', 'Tabbit', 'LocalAgent', 'bin', 'tabbit-cli.exe')
   : resolve(process.env.HOME ?? '', '.local', 'bin', 'tabbit-cli');
 const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`;
-const taskName = `yearbook-75-${process.pid}-${Date.now()}`;
+const taskName = `yearbook-final-${process.pid}-${Date.now()}`;
 const evidence = resolve(root, 'test-results', runId);
 const working = await mkdtemp(join(tmpdir(), 'yearbook 浏览器验收 '));
 const dataDir = join(working, '中文 空格 资料');
@@ -28,6 +29,7 @@ const runtimeFile = join(working, 'runtime.json');
 const ownedChildren = new Set();
 const receipts = [];
 const screenshotWarnings = [];
+const screenshots = [];
 let service;
 let serviceChild;
 let browserStarted = false;
@@ -101,15 +103,26 @@ async function step(name, code, readOnly = false) {
 }
 async function capture(name, target = 'page') {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    try { return await step(`${name}-${attempt}`, `return await ${target}.screenshot({fullPage:false,timeout:20000,scale:'css'});`, true); }
+    const before = await step(`${name}-before-${attempt}`, `return {url:${target}.url(),viewport:${target}.viewportSize(),layout:await ${target}.evaluate(() => ({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,dpr:devicePixelRatio}))};`, true);
+    try {
+      const shot = await step(`${name}-${attempt}`, `return await ${target}.screenshot({fullPage:true,timeout:25000,scale:'css',style:'html { scrollbar-gutter: stable !important; }'});`, true);
+      const after = await step(`${name}-after-${attempt}`, `return {viewport:${target}.viewportSize(),layout:await ${target}.evaluate(() => ({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,dpr:devicePixelRatio}))};`, true);
+      screenshots.push({ name, attempt, capturedFullPage: shot?.capturedFullPage === true, width: shot?.width, height: shot?.height, before, after });
+      if (shot?.capturedFullPage === true) return shot;
+      screenshotWarnings.push({ name, attempt, message: 'Tabbit 退回视口截图；此图不作为完整页面证据。' });
+      process.stdout.write(`[截图限制] ${name} 退回视口图，单独记录视觉限制。\n`);
+      return shot;
+    }
     catch (error) {
       if (error.receipt?.status !== 'failed' || !error.receipt?.result?.error?.includes('screenshot')) throw error;
       screenshotWarnings.push({ name, attempt, message: error.message });
       process.stdout.write(`[截图重试] ${name} 第 ${attempt} 次未完成，业务流程结果保留。\n`);
-      // Inspect the same owned page before a pure screenshot retry; never replay business mutations.
-      await step(`${name}-inspect-${attempt}`, `return {url:${target}.url(),title:await ${target}.title()};`, true);
     }
+    // Inspect the same owned page before a pure screenshot retry; never replay business mutations.
+    await step(`${name}-inspect-${attempt}`, `return {url:${target}.url(),title:await ${target}.title(),layout:await ${target}.evaluate(() => ({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,dpr:devicePixelRatio}))};`, true);
   }
+  // Browser assertions and business mutations continue; the final report separates screenshot coverage.
+  return null;
 }
 async function json(path) {
   const response = await fetch(new URL(path, service.url));
@@ -133,12 +146,18 @@ try {
   await startService(port);
   const landscape = join(working, '横向 测试.jpg');
   const portrait = join(working, '竖向 测试.jpg');
+  const letterPhoto = join(working, '只在信中的 照片.jpg');
   await sharp({ create: { width: 900, height: 600, channels: 3, background: '#b6c9bc' } }).jpeg().toFile(landscape);
   await sharp({ create: { width: 600, height: 900, channels: 3, background: '#ceb697' } }).jpeg().toFile(portrait);
-  await step('01-records-and-photos', initialise({ base: service.url, mockUrl, landscape, portrait }));
+  await sharp({ create: { width: 800, height: 600, channels: 3, background: '#9cad92' } }).jpeg().toFile(letterPhoto);
+  await step('01-records-and-photos', initialise({ base: service.url, mockUrl, landscape, portrait, letterPhoto }));
+  await step('01-letters-create-seal', finalFlows.lettersCreate);
   await stopOwnedService();
   await startService(port);
   await step('02-restart-search-restore', `globalThis.Y.base = ${JSON.stringify(service.url)};\n${flows.restart}`);
+  await step('02-letters-due-after-restart', finalFlows.lettersAfterRestart);
+  await capture('02-letters-narrow');
+  await step('02-desktop-width', `await page.setViewportSize({width:1440,height:1000}); return {width:1440};`);
   await step('03-manual-yearbook', flows.yearbook);
   const exported = await step('04-html-export', flows.exportHtml);
   const download = await fetch(new URL(exported.href, service.url));
@@ -154,6 +173,15 @@ try {
   await step('05-offline-html-open', `globalThis.Y.offlineUrl = ${JSON.stringify(pathToFileURL(join(offline, 'index.html')).href)};\n${flows.offline}`);
   await capture('05-offline-screenshot', 'Y.offlinePage');
   await step('05-offline-cleanup', `await Y.offlinePage.close(); delete Y.offlinePage; return {closedScratchPage:true};`);
+  const pdfExport = await step('05-pdf-export', finalFlows.exportPdf);
+  const pdfResponse = await fetch(new URL(pdfExport.href, service.url));
+  assert.ok(pdfResponse.ok, 'PDF 下载失败');
+  const pdfBytes = Buffer.from(await pdfResponse.arrayBuffer());
+  assert.equal(pdfBytes.subarray(0, 5).toString(), '%PDF-');
+  assert.ok(pdfBytes.subarray(-200).toString().includes('%%EOF'), 'PDF 必须完整结束');
+  await writeFile(join(evidence, 'manual-yearbook.pdf'), pdfBytes);
+  await writeFile(join(evidence, 'pdf-export.json'), JSON.stringify(pdfExport.result, null, 2));
+  await step('05-yearbook-ordering-and-template', finalFlows.ordering);
   for (const [name, code] of [
     ['06-model-responses', flows.responses], ['07-model-chat', flows.chat],
     ['08-models-desktop', null],
@@ -166,19 +194,23 @@ try {
     else { await step(name, code); if (name === '12-monthly-narrow') await capture('12-monthly-screenshot'); }
   }
   const state = await step('20-final-persistence', flows.final);
+  const letterState = await step('20-letters-backup-restored', finalFlows.lettersRestored);
   await stopOwnedService();
   await startService(port);
-  const [records, drafts, books] = await Promise.all([json('/api/records?limit=500'), json('/api/ai/drafts?limit=100'), json('/api/yearbooks')]);
+  const [records, drafts, books, letters] = await Promise.all([json('/api/records?limit=500'), json('/api/ai/drafts?limit=100'), json('/api/yearbooks'), json('/api/letters')]);
   assert.equal(records.total, 2); assert.ok(drafts.total >= 7); assert.ok(books.total >= 1);
   assert.equal(records.items.find(record => record.id === state.recordId).media.length, 2);
+  assert.equal(letters.total, 2);
+  assert.equal((await json('/api/letters/' + letterState.futureLetterId)).status, 'sealed');
+  assert.equal((await json('/api/letters/' + letterState.dueLetterId)).status, 'read');
   assert.ok((await readFile(join(evidence, 'manual-yearbook.zip'))).length > 1000);
-  await writeFile(join(evidence, 'summary.json'), JSON.stringify({ passed: true, at: new Date().toISOString(), steps: receipts.filter(item => item.receipt?.status === 'succeeded').map(item => item.name), screenshotWarnings, records: records.total, aiDrafts: drafts.total, yearbooks: books.total, modelService: '本机确定性模拟；不代表真实模型验证', ...state }, null, 2));
+  await writeFile(join(evidence, 'summary.json'), JSON.stringify({ passed: true, at: new Date().toISOString(), steps: receipts.filter(item => item.receipt?.status === 'succeeded').map(item => item.name), screenshots, fullPageScreenshotsComplete: ['02-letters-narrow','05-offline-screenshot','08-models-desktop','12-monthly-screenshot'].every(name => screenshots.some(shot => shot.name === name && shot.capturedFullPage)), screenshotWarnings, records: records.total, aiDrafts: drafts.total, yearbooks: books.total, letters: letters.total, pdfBytes: pdfBytes.length, modelService: '本机确定性模拟；不代表真实模型验证', ...state, ...letterState }, null, 2));
   success = true;
-  process.stdout.write(`E2E 通过：隔离资料、照片与重启、手工年册、离线 HTML、双协议、AI 草稿保护、Agent、降级、取消重试、备份恢复。\n截图失败或重试记录：${screenshotWarnings.length} 项；详见回执。\n验收证据：${evidence}\n`);
+  process.stdout.write(`E2E 通过：隔离资料、照片与重启、未来信封存/到期/恢复、手工年册、离线 HTML 与 PDF、双协议、AI 草稿保护、Agent、降级、取消重试、备份恢复。\n截图失败或重试记录：${screenshotWarnings.length} 项；详见回执。\n验收证据：${evidence}\n`);
 } catch (error) {
   process.stderr.write(`${error.stack || error.message}\n`);
   process.exitCode = 1;
-  if (browserStarted) await step('failure-inspection', `return {url:page.url(),tree:JSON.stringify(await page.ariaSnapshot({mode:'ai',depth:12})).slice(0,9000),shot:await page.screenshot({fullPage:false})};`).catch(() => undefined);
+  if (browserStarted) await step('failure-inspection', `const book = globalThis.Y?.bookId && globalThis.read ? await read('/api/yearbooks/' + Y.bookId).catch(() => null) : null; return {url:page.url(),tree:JSON.stringify(await page.ariaSnapshot({mode:'ai',depth:12})).slice(0,9000),book:book && {id:book.id,template:book.template,chapters:book.chapters.map(chapter => ({id:chapter.id,title:chapter.title,body:chapter.body.slice(0,200),sourceRecordIds:chapter.sourceRecordIds,blocks:chapter.blocks.map(block => ({id:block.id,type:block.type,mediaId:block.mediaId,recordId:block.recordId,caption:block.caption}))}))}};`, true).catch(() => undefined);
 } finally {
   if (browserStarted) {
     const result = await command(['finish', '--task', taskName]);

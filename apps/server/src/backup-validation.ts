@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { aiDraftContentSchema, aiTaskInputSchema, dateSchema, idSchema, modelCapabilitiesSchema, modelProfileInputSchema, type AiDraftContent } from '@yearbook/shared';
+import { aiDraftContentSchema, aiTaskInputSchema, dateSchema, idSchema, letterInputSchema, modelCapabilitiesSchema, modelProfileInputSchema, type AiDraftContent } from '@yearbook/shared';
 import { credentialReferencePattern } from './models/credentials.js';
 import type { ProfileRow } from './models/service.js';
 import { sourceEntries } from './ai/store.js';
@@ -18,6 +18,27 @@ const snapshotsSchema = z.array(snapshotSchema).max(2000);
 const warningsSchema = z.array(z.string().max(2000)).max(100);
 const usageSchema = z.object({ inputTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative().optional(), totalTokens: z.number().int().nonnegative().optional() }).strict();
 const equal = (a: string[], b: string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+/** Letter content is backed up, including deleted letters, without weakening the envelope boundary on restore. */
+export function validateLetterBackupData(db: Database.Database, version: number) {
+  if (version < 5) return;
+  const timestamp = z.string().datetime();
+  type Row = { id: string; title: string; body: string; unlock_on: string | null; created_at: string; updated_at: string; sealed_at: string | null; read_at: string | null; deleted_at: string | null };
+  type Photo = { media_id: string; caption: string; position: number };
+  for (const row of db.prepare('SELECT * FROM future_letters').all() as Row[]) {
+    idSchema.parse(row.id);
+    timestamp.parse(row.created_at); timestamp.parse(row.updated_at);
+    timestamp.nullable().parse(row.sealed_at); timestamp.nullable().parse(row.read_at); timestamp.nullable().parse(row.deleted_at);
+    const photos = db.prepare('SELECT media_id,caption,position FROM future_letter_media WHERE letter_id = ? ORDER BY position').all(row.id) as Photo[];
+    const input = letterInputSchema.parse({ title: row.title, body: row.body, unlockOn: row.unlock_on, media: photos.map(photo => ({ id: photo.media_id, caption: photo.caption })) });
+    for (const [index, photo] of photos.entries()) {
+      if (photo.position !== index) throw new Error('未来信照片顺序不连续');
+      if (!db.prepare('SELECT 1 FROM media WHERE id = ?').get(photo.media_id)) throw new Error('未来信照片关联不存在');
+    }
+    if (row.sealed_at && (!input.unlockOn || (!input.body.trim() && !photos.length))) throw new Error('封存信件缺少查看日期或内容');
+    if (row.read_at && !row.sealed_at) throw new Error('未封存信件不能已读');
+  }
+}
 
 /** Historical source snapshots remain valid even when the live record is soft-deleted or edited. */
 export function validateAiBackupData(db: Database.Database, version: number) {

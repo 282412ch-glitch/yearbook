@@ -1,15 +1,17 @@
-# 架构与数据流（75% 节点）
+# 架构与数据流
 
 ## 模块
 
 | 目录/模块 | 职责 |
 |---|---|
-| `apps/web` | React、TypeScript、Vite；记录、年册、模型设置、月报、AI 草稿和任务页面 |
-| `packages/shared` | Zod 输入校验、日期工具、记录/年册/任务/模型/AI 传输契约 |
+| `apps/web` | React、TypeScript、Vite；记录、年册、未来信、模型设置、月报、AI 草稿和任务页面 |
+| `packages/shared` | Zod 输入校验、日期工具、记录/年册/信件/任务/模型/AI 传输契约 |
 | `apps/server/src/app.ts` | Fastify 路由、安全头、Host/Origin 校验、恢复与关闭生命周期 |
 | `db.ts`、`migrations` | SQLite WAL、外键、可重复执行迁移、数据目录实例锁、串行操作队列 |
 | `records.ts`、`media.ts` | 记录、照片、中文搜索、盲盒、第一次、回顾补记 |
-| `yearbooks.ts`、`exports.ts` | 手工年册树、版本、HTML ZIP、浏览器 PDF 导出任务 |
+| `letters.ts` | 独立信件、封存/到期/拆阅、信封与正文访问、照片保护 |
+| `yearbooks.ts`、`exports.ts` | 手工年册树、版本、冻结保存稿、持久导出任务 |
+| `yearbook-template.ts`、`export-fonts.ts`、`pdf-browser.ts` | 统一排版、离线中文字体、独立 Chromium CDP 打印 |
 | `models/` | 凭据保管、配置与能力验证、独立 Responses/Chat 适配器、有界 HTTP/SSE |
 | `ai/` | 授权素材快照、项目工具、提示词、阶段任务、草稿版本与采用 |
 | `backups.ts`、`backup-validation.ts` | 快照、清单、结构/关联校验、旧版本升级、恢复与回滚 |
@@ -35,9 +37,20 @@
 | 002 | yearbooks、yearbook_chapters、yearbook_blocks、yearbook_sources、yearbook_versions、tasks |
 | 003 | model_profiles（配置与随机凭据引用，不含密钥） |
 | 004 | AI 素材范围、来源快照、任务阶段、草稿、来源关联、草稿版本 |
+| 005 | future_letters、future_letter_media；查看日期、封存/首次阅读、软删除、有序照片关系 |
 | schema_migrations | 版本、文件名、SHA256 和应用时间 |
 
-启动校验迁移顺序和校验和，在事务中只执行缺失迁移；拒绝缺号、不匹配或更高版本。迁移 SQL 不应改写，换行由 `.gitattributes` 固定 LF。未来信实体尚未加入，留待最终节点的新迁移。
+启动校验迁移顺序和校验和，在事务中只执行缺失迁移；拒绝缺号、不匹配或更高版本。迁移 SQL 不应改写，换行由 `.gitattributes` 固定 LF。最终阶段仅追加 005，001–004 的字节和校验和保留。
+
+## 未来信
+
+草稿使用独立实体，允许不完整正文/日期；封存需要有效的今天或未来日期，并至少包含正文或照片。封存后不能更新内容或日期。每次查询按服务端本地 `YYYY-MM-DD` 比较到期情况，不依赖程序关闭时仍运行的定时器。
+
+列表与首页摘要只返回信封元数据。未到期详情不返回正文、照片 ID、图注和 URL；到期 GET 不标已读，显式 POST read 才幂等记录首次阅读时间。所有信件均不进入普通记录检索或 Agent 素材范围。
+
+媒体沿用原图哈希去重；独占未到期信的照片不能直接读取，也不能只凭 ID 重新关联到记录/年册/另一封草稿。已有可读记录、年册及保存版本等共享引用正常使用。完整文件重新导入并验证哈希后可以获得 30 分钟连接内授权；再次封存撤销授权，重启或备份恢复更换数据库连接后授权失效，不新增持久权限表。
+
+封存是应用层的查看日期约束，不加密数据库或备份。日期依据本机时钟；本机文件仍由 Windows 用户与文件权限保护。
 
 ## 模型与 Agent
 
@@ -63,15 +76,17 @@ SQLite 保存 pending/running/completed/failed/cancelled、进度、错误、尝
 
 ## 导出
 
-导出从当前保存的年册读取结构。HTML 包含样式和 Base64 图片，ZIP 内有 index.html 和说明文件。PDF 使用本机 Edge/Chrome/Chromium 的 headless 打印，单独临时用户目录，不占用用户浏览器配置；找不到可用浏览器时明确失败，可重试或打开 HTML 手动打印。
+预览与导出由 `captureYearbookRenderSnapshot` 同时冻结已保存的年册、来源记录和媒体，再交给同一个 HTML/CSS 渲染器。显式空章节数组可保存空册；完全空白月份/封面占位省略，非空封面附记保留。照片模板用较宽版心、大幅照片与先图后文的记录卡片；文字模板使用宋体正文、较小图片与先文后图。长段落允许跨页，照片和短图注尽量同页，所有文字转义。
 
-当前 HTML 使用系统中文字体回退，**尚未打包导出专用字体**；两种模板的导出差异、长中文分页与完整 PDF 实物检查留待最终节点。不能把“文件生成”视为完整打印验收。
+按内容所需 Unicode 范围从已安装的 Fontsource Noto Sans/Serif SC 包读取 WOFF2，作为 data URL 嵌入 HTML；图片也内嵌。ZIP 包含完整 index.html、OFL 许可证、清单及说明，不依赖 CDN。预览 iframe 读取同一服务端模板，仅该预览路由允许同源 frame-ancestors 和 data 字体，禁止脚本。
+
+PDF 使用 Node 24 原生 WebSocket 与独立 Chromium 的 CDP 会话；仅监听随机本机调试端口，单独临时 profile、禁用扩展与联网，等待 `document.fonts.ready` 及全部图片 decode 后 `Page.printToPDF`，流式写文件并检查 PDF 完整结束。支持 `YEARBOOK_BROWSER` 指定路径。关闭通过 Browser.close，必要时只清理本次创建的浏览器 PID 及其子进程。找不到可用浏览器、资源损坏、超时或取消均有明确状态及重试，半成品不会标记完成。
 
 ## 备份与恢复
 
 1. SQLite backup API 取得一致性快照。只在临时快照中清空模型凭据引用并重置能力，VACUUM 清理残留页；不修改原库。
 2. 生成版本清单、必要媒体大小和 SHA256；不包含密钥、历史备份、临时导出、日志。
-3. 恢复在独立 staging 目录验证白名单路径、大小、哈希、SQLite integrity/FK、精确表结构、迁移记录、AI 来源与媒体关系。
+3. 恢复在独立 staging 目录验证白名单路径、大小、哈希、SQLite integrity/FK、精确表结构、迁移记录、AI 来源与媒体关系，以及信件状态、查看日期、封存/已读组合、照片顺序和关联。
 4. 旧备份先按它的原始迁移版本校验，再在 staging 副本升级至当前版本。再次清空凭据引用和能力，避免恶意备份绑定本机已有密钥。
 5. 暂停任务并保存恢复前 ZIP，写入恢复事务标记，将原库/媒体移到 rollback，再切换已验证文件。
 6. 成功后清除标记；失败恢复原文件。程序中途退出，下次启动先保守回滚。旧版本备份和中文/空格新目录恢复均有独立测试。

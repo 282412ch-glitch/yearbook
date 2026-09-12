@@ -4,6 +4,7 @@ import { idSchema } from '@yearbook/shared';
 import { z } from 'zod';
 import type { DataStore } from './db.js';
 import { AppError } from './errors.js';
+import { assertLetterMediaAccessible } from './letters.js';
 
 export type MediaRow = { id: string; hash: string; extension: string; filename: string; mime: string; size: number; width: number; height: number; suggested_date: string | null; created_at: string };
 export function presentMedia(row: MediaRow): MediaItem {
@@ -25,7 +26,10 @@ export function getRecord(store: DataStore, rawId: string): RecordItem {
 export function saveRecord(store: DataStore, input: RecordInput, existingId?: string): RecordItem {
   const id = existingId ? idSchema.parse(existingId) : randomUUID();
   if (existingId && getRecord(store, id).deletedAt) throw new AppError(409, 'RECORD_DELETED', '请先恢复这条记录，再继续编辑');
-  for (const media of input.media) if (!store.db.prepare('SELECT id FROM media WHERE id = ?').get(media.id)) throw new AppError(400, 'MEDIA_NOT_FOUND', '所选照片不存在，请重新导入');
+  for (const media of input.media) {
+    if (!store.db.prepare('SELECT id FROM media WHERE id = ?').get(media.id)) throw new AppError(400, 'MEDIA_NOT_FOUND', '所选照片不存在，请重新导入');
+    assertLetterMediaAccessible(store, media.id);
+  }
   const now = new Date().toISOString();
   store.db.transaction(() => {
     if (existingId) store.db.prepare('UPDATE records SET title = ?, body = ?, occurred_on = ?, location = ?, is_first = ?, include_in_yearbook = ?, updated_at = ? WHERE id = ?').run(input.title, input.body, input.occurredOn, input.location, Number(input.isFirst), Number(input.includeInYearbook), now, id);

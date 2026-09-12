@@ -34,7 +34,7 @@
 | POST | `/api/yearbooks` | `YearbookInput`，不传 chapters 时按该年记录生成默认章节，201 |
 | GET / PUT / DELETE | `/api/yearbooks/:id` | 读取、完整保存结构化年册、软删除 |
 | POST | `/api/yearbooks/:id/restore` | 恢复软删除年册 |
-| GET | `/api/yearbooks/:id/preview` | 返回包含内嵌图片的可打印 HTML |
+| GET / HEAD | `/api/yearbooks/:id/preview` | 返回内嵌照片/字体的同一份可打印 HTML；HEAD 校验可用性，允许应用同源 iframe |
 | GET | `/api/yearbooks/:id/versions` | 版本列表（manual/ai 来源） |
 | POST | `/api/yearbooks/:id/versions` | `{snapshot:YearbookInput,source:'manual'|'ai',label?}`，只保存提案快照，不替换当前编辑稿 |
 | GET | `/api/yearbooks/:id/versions/:versionId` | 读取版本快照 |
@@ -44,7 +44,9 @@
 | GET | `/api/tasks` / `/api/tasks/:id` | 查询导出及后台任务 |
 | POST | `/api/tasks/:id/cancel` / `/retry` | 取消或重试失败/取消任务 |
 
-年册章节包含 `kind/title/body/position`，块类型支持 `paragraph`、`image`、`quote`、`record`，每个章节保存 `sourceRecordIds`。保存会创建不可变版本快照，手动编辑不会覆盖旧版本。HTML 导出为自包含 ZIP；PDF 导出调用本机 Chromium 的无头打印参数，未安装浏览器时任务明确失败并提示在浏览器打印 HTML。
+年册章节包含 `kind/title/body/position`，块类型支持 `paragraph`、`image`、`quote`、`record`，每个章节保存 `sourceRecordIds`。传入数组顺序决定章节和块的位置，移动时保留 ID/图注/来源；显式 `chapters:[]` 保存空册，不传字段才生成默认章节。保存会创建不可变版本快照，手动编辑不会覆盖旧版本。
+
+HTML ZIP 的 `index.html` 内嵌所需 Noto 中文字体与全部图片，并附 OFL 许可证、导出版本清单与说明。PDF 任务使用独立 Chromium CDP，在禁网且字体/图片就绪后打印；任务结果包含实际浏览器、字节数、载入字体片段数、图片数、模板及保存时间。没有可用浏览器、资源缺失、超时或取消均为明确状态，下载端不返回未完成产物。
 
 ## 节点三：模型、AI 草稿与任务
 
@@ -71,3 +73,22 @@
 模型详情使用 `ModelProfile`，数据库凭据引用不对前端暴露。恢复备份后凭据引用清空、四项能力重置，需重新配置。服务只给出固定中文错误，不回显上游敏感信息。恢复期间开始的写入返回 503；跨越恢复周期的迟到请求返回 409 `LIBRARY_RESTORED`。
 
 协议与运行器接口见 [STAGE75_CONTRACT.md](STAGE75_CONTRACT.md)，用户配置流程见 [AI_CONFIGURATION.md](AI_CONFIGURATION.md)。
+
+## 未来信
+
+| 方法 | 地址 | 响应/用途 |
+|---|---|---|
+| GET | `/api/letters?status=all&deleted=false&limit=24&offset=0` | `LetterList`，仅信封；status 可为 all/draft/sealed/due/read |
+| GET | `/api/letters/summary` | 服务端 today、dueUnread、totalDrafts、sealedCount、至多 50 个到期信封 |
+| POST | `/api/letters` | `LetterInput` → 201 `LetterDetail`，创建持久草稿 |
+| GET / PUT | `/api/letters/:id` | 获取允许阅读的详情 / 更新未封存草稿 |
+| POST | `/api/letters/:id/seal` | 空请求体或 `{}`，校验正文/照片和查看日期后幂等封存 |
+| POST | `/api/letters/:id/read` | 到期后明确拆阅，首次 readAt 固定，重复调用幂等 |
+| DELETE | `/api/letters/:id` | 软删除，照片不丢失 |
+| POST | `/api/letters/:id/restore` | 恢复信件及原查看日期 |
+
+`LetterInput={title,body,unlockOn,media:[{id,caption}]}`，草稿允许未完成正文和空日期。封存需要今天或未来的本地日期，且正文非空或至少有一张照片。封存后 PUT 返回 `LETTER_SEALED`，不能修改内容或提前改日期。
+
+`LetterEnvelope` 含 ID、标题、查看日期、创建/修改/封存/首次阅读/删除时间、status、photoCount、canRead。未到期的 `LetterDetail` 不包含 `body` 或 `media` 字段；到期 GET 也不更新 readAt。未来信不进入 records、普通搜索、盲盒和 AI 授权范围。
+
+仅属于未到期信件的照片经 `/api/media/:id/{kind}` 读取或只凭 ID 建立新关联时返回 `LETTER_MEDIA_SEALED`。用户主动上传完整相同文件通过哈希验证后可临时复用；再次封存、30 分钟到期、重启和恢复换库会撤销这种临时授权。已有可读的共享引用不受单个信件封存影响。

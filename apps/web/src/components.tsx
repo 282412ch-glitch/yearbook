@@ -41,7 +41,7 @@ export function PhotoViewer({ photos, initial, onClose }: { photos: RecordMedia[
   </dialog>;
 }
 
-export function PhotoImporter({ photos, onChange, onSuggestedDate, onBusyChange }: { photos: RecordMedia[]; onChange: (photos: RecordMedia[]) => void; onSuggestedDate?: (date: string) => void; onBusyChange?: (busy: boolean) => void }) {
+export function PhotoImporter({ photos, onChange, onSuggestedDate, onBusyChange, context = 'record' }: { photos: RecordMedia[]; onChange: (photos: RecordMedia[]) => void; onSuggestedDate?: (date: string) => void; onBusyChange?: (busy: boolean) => void; context?: 'record' | 'letter' }) {
   const input = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
   const latest = useRef(photos); latest.current = photos;
@@ -53,7 +53,7 @@ export function PhotoImporter({ photos, onChange, onSuggestedDate, onBusyChange 
   async function importFiles(files: File[]) {
     if (!files.length) return;
     setError(''); setMessage('');
-    if (files.length + latest.current.length > 100) { setError('每条记录最多添加 100 张照片。请分批记录。'); return; }
+    if (files.length + latest.current.length > 100) { setError(context === 'letter' ? '每封信最多添加 100 张照片。' : '每条记录最多添加 100 张照片。请分批记录。'); return; }
     const previews = files.map(file => ({ id: crypto.randomUUID(), name: file.name, url: URL.createObjectURL(file) }));
     setPending(previews); onBusyChange?.(true);
     const requestController = new AbortController(); controller.current = requestController;
@@ -63,7 +63,7 @@ export function PhotoImporter({ photos, onChange, onSuggestedDate, onBusyChange 
       const ids = new Set(latest.current.map(item => item.id));
       const additions = result.items.filter(item => { if (ids.has(item.id)) return false; ids.add(item.id); return true; }).map(item => ({ ...item, caption: '' }));
       onChange([...latest.current, ...additions]);
-      setMessage(`已导入 ${additions.length} 张照片${result.duplicates ? `，${result.duplicates} 个重复文件已复用` : ''}。保存记录后即可在时间轴中找到。`);
+      setMessage(`已导入 ${additions.length} 张照片${result.duplicates ? `，${result.duplicates} 个重复文件已复用` : ''}。${context === 'letter' ? '保存草稿后，照片会随信件一同保留。' : '保存记录后即可在时间轴中找到。'}`);
     } catch (error) { setError(requestController.signal.aborted ? '已取消导入，可以重新选择照片。' : errorText(error)); }
     finally { previews.forEach(item => URL.revokeObjectURL(item.url)); setPending([]); onBusyChange?.(false); if (input.current) input.current.value = ''; }
   }

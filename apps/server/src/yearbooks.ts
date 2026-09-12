@@ -3,7 +3,8 @@ import type { YearbookBlock, YearbookChapter, YearbookInput, YearbookItem, Yearb
 import { idSchema, yearbookInputSchema } from '@yearbook/shared';
 import type { DataStore } from './db.js';
 import { AppError } from './errors.js';
-import { getRecord } from './records.js';
+import { captureYearbookRenderSnapshot, renderYearbookSnapshot } from './yearbook-template.js';
+import { assertLetterMediaAccessible } from './letters.js';
 
 type BookRow = { id: string; year: number; title: string; template: 'photo' | 'text'; cover_media_id: string | null; intro_body: string; created_at: string; updated_at: string; deleted_at: string | null };
 type ChapterRow = { id: string; yearbook_id: string; kind: YearbookChapter['kind']; title: string; body: string; position: number; created_at: string; updated_at: string };
@@ -11,6 +12,7 @@ type BlockRow = { id: string; chapter_id: string; type: YearbookBlock['type']; b
 
 function validateSources(store: DataStore, input: YearbookInput) {
   if (input.coverMediaId && !store.db.prepare('SELECT id FROM media WHERE id = ?').get(input.coverMediaId)) throw new AppError(400, 'MEDIA_NOT_FOUND', '封面照片不存在');
+  if (input.coverMediaId) assertLetterMediaAccessible(store, input.coverMediaId);
   for (const chapter of input.chapters) {
     for (const source of chapter.sourceRecordIds) {
       const record = store.db.prepare('SELECT id, deleted_at FROM records WHERE id = ?').get(source) as { id: string; deleted_at: string | null } | undefined;
@@ -18,6 +20,7 @@ function validateSources(store: DataStore, input: YearbookInput) {
     }
     for (const block of chapter.blocks) {
       if (block.mediaId && !store.db.prepare('SELECT id FROM media WHERE id = ?').get(block.mediaId)) throw new AppError(400, 'MEDIA_NOT_FOUND', '章节中的照片不存在');
+      if (block.mediaId) assertLetterMediaAccessible(store, block.mediaId);
       if (block.recordId) {
         const record = store.db.prepare('SELECT id, deleted_at FROM records WHERE id = ?').get(block.recordId) as { id: string; deleted_at: string | null } | undefined;
         if (!record || record.deleted_at) throw new AppError(400, 'RECORD_NOT_AVAILABLE', '章节关联的记录不存在或已删除');
@@ -67,7 +70,8 @@ function snapshotInput(book: YearbookItem): YearbookInput {
 
 export function saveYearbook(store: DataStore, rawInput: unknown, existingId?: string, source: 'manual' | 'ai' = 'manual'): YearbookItem {
   let input = yearbookInputSchema.parse(rawInput);
-  if (!existingId && input.chapters.length === 0) input = defaultYearbookInput(store, input);
+  const suppliedChapters = rawInput != null && typeof rawInput === 'object' && Object.prototype.hasOwnProperty.call(rawInput, 'chapters');
+  if (!existingId && !suppliedChapters && input.chapters.length === 0) input = defaultYearbookInput(store, input);
   validateSources(store, input);
   const id = existingId ? idSchema.parse(existingId) : randomUUID();
   const existing = existingId ? store.db.prepare('SELECT id, deleted_at FROM yearbooks WHERE id = ?').get(id) as { id: string; deleted_at: string | null } | undefined : undefined;
@@ -164,30 +168,9 @@ export function applyYearbookVersion(store: DataStore, rawBookId: string, rawVer
   return saveYearbook(store, version.snapshot, version.yearbookId, 'manual');
 }
 
-/** Build a self-contained HTML document. Images are embedded as data URLs for offline reading. */
+/** Preview and both export formats share the same saved-content renderer and offline assets. */
 export async function renderYearbookHtml(store: DataStore, rawId: string): Promise<string> {
-  const book = getYearbook(store, rawId);
-  const mediaCache = new Map<string, string>();
-  const { readFile } = await import('node:fs/promises');
-  const { join } = await import('node:path');
-  const { mediaFiles } = await import('./media.js');
-  const image = async (mediaId: string | null) => {
-    if (!mediaId) return '';
-    if (mediaCache.has(mediaId)) return mediaCache.get(mediaId)!;
-    const row = store.db.prepare('SELECT * FROM media WHERE id = ?').get(mediaId) as import('./records.js').MediaRow | undefined;
-    if (!row) return '';
-    try { const data = await readFile(join(store.dataDir, mediaFiles(row).display)); const url = `data:image/jpeg;base64,${data.toString('base64')}`; mediaCache.set(mediaId, url); return url; } catch { return ''; }
-  };
-  const esc = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
-  const blocks = async (chapter: YearbookChapter) => (await Promise.all(chapter.blocks.map(async block => {
-    if (block.type === 'image') { const src = await image(block.mediaId); return src ? `<figure><img src="${src}" alt="${esc(block.caption || '年册照片')}"><figcaption>${esc(block.caption)}</figcaption></figure>` : ''; }
-    if (block.type === 'quote') return `<blockquote>${esc(block.body).replaceAll('\n', '<br>')}</blockquote>`;
-    if (block.type === 'record') { const record = block.recordId ? getRecord(store, block.recordId) : null; return record ? `<article class="record"><h3>${esc(record.title || '未命名记录')}</h3><p>${esc(record.body).replaceAll('\n', '<br>')}</p><small>${esc(record.occurredOn ?? '日期待补')}</small></article>` : ''; }
-    return block.body ? `<p>${esc(block.body).replaceAll('\n', '<br>')}</p>` : '';
-  }))).join('');
-  const chapterHtml = (await Promise.all(book.chapters.map(async chapter => `<section class="chapter"><h2>${esc(chapter.title || '未命名章节')}</h2>${chapter.body ? `<div class="chapter-body">${esc(chapter.body).replaceAll('\n', '<br>')}</div>` : ''}${await blocks(chapter)}</section>`))).join('');
-  const cover = await image(book.coverMediaId);
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(book.title || `${book.year} 年册`)}</title><style>@font-face{font-family:YearbookSans;src:local("Noto Sans SC")}*{box-sizing:border-box}body{margin:0;background:#f6f2e9;color:#2f302d;font-family:YearbookSans,"Microsoft YaHei",sans-serif;line-height:1.8}.page{max-width:900px;margin:0 auto;padding:42px 56px;background:#fffdf8;min-height:100vh}.cover{text-align:center;display:flex;flex-direction:column;justify-content:center;min-height:80vh;border-bottom:1px solid #d8d0c0}.cover img{max-width:100%;max-height:440px;object-fit:contain;margin:0 auto 28px}.cover h1{font-size:42px;font-weight:500;margin:0}.cover p{color:#777;margin:8px}.chapter{break-inside:avoid;page-break-inside:avoid;padding:34px 0;border-bottom:1px solid #e5dfd3}.chapter h2{font-size:28px;font-weight:500;margin:0 0 12px}.chapter-body{margin-bottom:18px;white-space:normal}.record{border-left:3px solid #b78f72;padding-left:18px;margin:22px 0}.record h3{margin:0;font-size:19px}.record p{margin:6px 0}.record small{color:#777}figure{margin:22px 0;text-align:center;break-inside:avoid}figure img{max-width:100%;max-height:650px;object-fit:contain}figcaption{color:#777;font-size:14px}blockquote{margin:22px 0;padding:14px 20px;background:#f4eee4;border-left:4px solid #b78f72;font-style:italic}@media print{body{background:#fff}.page{padding:0;max-width:none}.chapter{break-inside:avoid}}@media(max-width:600px){.page{padding:24px}.cover h1{font-size:32px}}</style></head><body><main class="page"><section class="cover">${cover ? `<img src="${cover}" alt="封面照片">` : ''}<h1>${esc(book.title || `${book.year} 年册`)}</h1><p>${book.year}</p>${book.introBody ? `<p>${esc(book.introBody).replaceAll('\n', '<br>')}</p>` : ''}</section>${chapterHtml}</main></body></html>`;
+  return renderYearbookSnapshot(captureYearbookRenderSnapshot(store, getYearbook(store, rawId)));
 }
 
 export function getYearbookForExport(store: DataStore, rawId: string) {

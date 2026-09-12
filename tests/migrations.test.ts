@@ -42,7 +42,7 @@ describe('旧版备份结构验证后升级', () => {
     if (book) expect((await json<YearbookItem>(target, 'GET', `/api/yearbooks/${book.id}`)).introBody).toBe('手工文字不能丢失。');
     await target.close();
     const restored = new Database(join(workspace.root, '恢复后的 新目录', DATABASE_NAME));
-    try { migrate(restored); migrate(restored); expect(restored.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([1, 2, 3, 4].map(version => ({ version }))); expect(restored.pragma('foreign_key_check')).toEqual([]); }
+    try { migrate(restored); migrate(restored); expect(restored.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([1, 2, 3, 4, 5].map(version => ({ version }))); expect(restored.pragma('foreign_key_check')).toEqual([]); }
     finally { restored.close(); }
     target = await workspace.open('恢复后的 新目录');
     expect((await json<RecordItem>(target, 'GET', `/api/records/${saved!.id}`)).body).toBe(saved!.body);

@@ -20,6 +20,7 @@ import { CredentialVault } from './models/credentials.js';
 import { registerModelRoutes } from './models/routes.js';
 import { AiRunner } from './ai/runner.js';
 import { registerAiRoutes } from './ai/routes.js';
+import { assertLetterMediaAccessible, registerLetterRoutes } from './letters.js';
 
 export function instanceId(token: string | undefined) { return token ? createHash('sha256').update(token).digest('hex') : null; }
 const loopback = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -78,6 +79,7 @@ export async function createApp(options: { dataDir: string; webDist?: string; cr
   app.options('/api/*', async (_request, reply) => reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS').header('Access-Control-Allow-Headers', 'Content-Type,Authorization').code(204).send());
   registerModelRoutes(app, models);
   registerAiRoutes(app, store, ai);
+  registerLetterRoutes(app, store, requireCurrentLibrary);
   app.get('/api/health', async () => ({ app: 'yearbook', version: '0.1.0', status: 'ok', pid: process.pid, instanceId: instanceId(process.env.YEARBOOK_INSTANCE_TOKEN) }));
   app.get('/api/stats', async () => store.write(async (): Promise<AppStats> => {
     const count = (sql: string) => (store.db.prepare(sql).get() as { count: number }).count;
@@ -109,7 +111,7 @@ export async function createApp(options: { dataDir: string; webDist?: string; cr
   app.get<{ Params: { id: string; kind: string } }>('/api/media/:id/:kind', async (request, reply) => {
     const id = idSchema.parse(request.params.id);
     const kind = z.enum(['original', 'display', 'thumbnail']).parse(request.params.kind);
-    const media = await store.write(() => readMedia(store, id, kind));
+    const media = await store.write(() => { assertLetterMediaAccessible(store, id); return readMedia(store, id, kind); });
     return reply.type(media.mime).header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(media.filename).replace(/'/g, '%27')}`).send(media.buffer);
   });
   app.get('/api/backups', async () => store.write(async () => ({ items: await listBackups(store) })));
@@ -143,7 +145,7 @@ export async function createApp(options: { dataDir: string; webDist?: string; cr
     } finally { models.resume(); ai.resume(); resumeExports(store); restoring = false; }
   });
   app.get<{ Querystring: { year?: string; deleted?: string; limit?: string; offset?: string } }>('/api/yearbooks', async request => store.write(() => listYearbooks(store, request.query)));
-  app.post('/api/yearbooks', async (request, reply) => { const input = yearbookInputSchema.parse(request.body); return reply.code(201).send(await store.write(() => saveYearbook(store, input))); });
+  app.post('/api/yearbooks', async (request, reply) => { yearbookInputSchema.parse(request.body); return reply.code(201).send(await store.write(() => saveYearbook(store, request.body))); });
   app.get<{ Params: { id: string } }>('/api/yearbooks/:id', async request => store.write(() => getYearbook(store, request.params.id)));
   app.put<{ Params: { id: string } }>('/api/yearbooks/:id', async request => { const input = yearbookInputSchema.parse(request.body); return store.write(() => saveYearbook(store, input, request.params.id)); });
   app.delete<{ Params: { id: string } }>('/api/yearbooks/:id', async request => store.write(() => deleteYearbook(store, request.params.id)));
@@ -155,7 +157,9 @@ export async function createApp(options: { dataDir: string; webDist?: string; cr
   });
   app.get<{ Params: { id: string; versionId: string } }>('/api/yearbooks/:id/versions/:versionId', async request => store.write(() => getYearbookVersion(store, request.params.id, request.params.versionId)));
   app.post<{ Params: { id: string; versionId: string } }>('/api/yearbooks/:id/versions/:versionId/apply', async request => store.write(() => applyYearbookVersion(store, request.params.id, request.params.versionId)));
-  app.get<{ Params: { id: string } }>('/api/yearbooks/:id/preview', async (request, reply) => reply.type('text/html; charset=utf-8').send(await store.write(() => renderYearbookHtml(store, request.params.id))));
+  app.get<{ Params: { id: string } }>('/api/yearbooks/:id/preview', async (request, reply) => reply
+    .header('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'")
+    .type('text/html; charset=utf-8').send(await store.write(() => renderYearbookHtml(store, request.params.id))));
   app.post<{ Params: { id: string }; Body: { format?: string; idempotencyKey?: string } }>('/api/yearbooks/:id/export', async (request, reply) => {
     const body = z.object({ format: z.enum(['html', 'pdf']).default('html'), idempotencyKey: z.string().trim().max(200).optional() }).strict().parse(request.body ?? {});
     const format = body.format;

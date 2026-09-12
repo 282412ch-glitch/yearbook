@@ -10,7 +10,7 @@ import { DATABASE_NAME, RESTORE_STATE_NAME, MIGRATIONS, migrate, openDatabase, t
 import { mediaFiles } from './media.js';
 import { getRecord, type MediaRow } from './records.js';
 import { AppError } from './errors.js';
-import { validateAiBackupData } from './backup-validation.js';
+import { validateAiBackupData, validateLetterBackupData } from './backup-validation.js';
 
 export const MAX_BACKUP_BYTES = 512 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 1024 * 1024 * 1024;
@@ -133,6 +133,7 @@ function checkDatabase(file: string, manifest: Manifest) {
       for (const version of db.prepare('SELECT snapshot_json FROM yearbook_versions WHERE yearbook_id = ?').all(book.id) as { snapshot_json: string }[]) yearbookInputSchema.parse(JSON.parse(version.snapshot_json));
     }
     validateAiBackupData(db, migrations.at(-1)!.version);
+    validateLetterBackupData(db, migrations.at(-1)!.version);
     const required = new Set([DATABASE_NAME, ...rows.flatMap(row => Object.values(mediaFiles(row)))]);
     if (required.size !== manifest.files.length || manifest.files.some(file => !required.has(file.path))) throw new Error('媒体文件清单与数据库关联不一致');
     for (const row of rows) {

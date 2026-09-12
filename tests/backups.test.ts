@@ -42,7 +42,7 @@ describe('独立中文空格目录的备份、恢复与迁移', () => {
     const zip = new AdmZip(snapshot.buffer);
     const inventory = manifest(zip);
     expect(inventory).toMatchObject({ format: 'yearbook-backup', formatVersion: 1 });
-    expect(inventory.migrations.map(item => item.version)).toEqual([1, 2, 3, 4]);
+    expect(inventory.migrations.map(item => item.version)).toEqual([1, 2, 3, 4, 5]);
     expect(zip.getEntries()).toHaveLength(8); // DB, 2 originals, 2 displays, 2 thumbnails, manifest.
     expect(zip.getEntries().every(entry => /^(manifest\.json|yearbook\.sqlite3|(media|display|thumbnails)\/[^/]+)$/.test(entry.entryName))).toBe(true);
     for (const file of inventory.files) {
@@ -73,7 +73,7 @@ describe('独立中文空格目录的备份、恢复与迁移', () => {
     try {
       expect(database.pragma('integrity_check', { simple: true })).toBe('ok');
       expect(database.pragma('foreign_key_check')).toEqual([]);
-        expect(database.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
+        expect(database.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
     } finally { database.close(); }
     target = await workspace.open('恢复 新目录');
     expect(await json<RecordItem>(target, 'GET', `/api/records/${expected.id}`)).toEqual(expected);

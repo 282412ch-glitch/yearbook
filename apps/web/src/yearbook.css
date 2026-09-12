@@ -1,0 +1,76 @@
+/* The contact sheet makes photo choices visible; numbers describe the saved
+ * reading order. All surfaces retain the journal's paper, ink and olive tokens. */
+.yearbook-output-actions { gap: var(--space-sm); }
+.yearbook-output-actions .button { white-space: normal; text-align: center; }
+.yearbook-ai-actions { margin-bottom: var(--space-lg); }
+.yearbook-editor .yearbook-editable { display: grid; gap: var(--space-2xl); min-width: 0; padding: 0; margin: 0; border: 0; }
+.yearbook-editor .yearbook-save-bar { position: sticky; top: var(--space-xs); z-index: var(--z-sticky); padding: var(--space-md); border: var(--rule-thin) solid var(--color-rule); background: var(--color-paper); box-shadow: 0 3px 12px var(--color-shadow); }
+.yearbook-editor .yearbook-save-bar > div { min-width: 0; flex: 1 1 240px; }
+.yearbook-editor .yearbook-save-bar .save-status { color: var(--color-secondary); flex-wrap: wrap; }
+.yearbook-editor .yearbook-save-bar .helper { margin-top: var(--space-2xs); }
+.yearbook-editor .chapter-editor, .yearbook-editor .block-editor-item { scroll-margin-block: 130px var(--space-xl); }
+.yearbook-editor .chapter-editor-body[hidden] { display: none; }
+.yearbook-editor .chapter-editor-heading { flex-wrap: wrap; gap: var(--space-sm); }
+.yearbook-editor .chapter-number { flex-basis: 58px; display: block; white-space: nowrap; }
+.yearbook-editor .chapter-number small { color: var(--color-muted); }
+.yearbook-editor .chapter-heading-fields { grid-template-columns: minmax(135px, 0.35fr) minmax(0, 1fr); }
+.yearbook-editor .chapter-tools .icon-button, .yearbook-editor .block-tools .icon-button { width: 40px; height: 40px; margin-left: 0; }
+.yearbook-editor .icon-button[aria-disabled='true'] { opacity: 0.42; cursor: default; }
+.yearbook-editor .icon-button:not([aria-disabled='true']):not(:disabled):hover { background: var(--color-accent-soft); }
+.yearbook-editor .source-record-list .check-label > span { min-width: 0; }
+.yearbook-order-feedback { min-height: 2.5rem; margin-bottom: var(--space-md); padding-left: var(--space-sm); border-left: 2px solid var(--color-accent); color: var(--color-secondary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.yearbook-editor .block-editor-top { flex-wrap: wrap; }
+.yearbook-editor .block-editor-top .block-index { white-space: nowrap; }
+.yearbook-editor .block-editor-top > select { flex: 1 1 100px; width: auto; max-width: 180px; }
+.yearbook-editor .block-tools { display: flex; gap: var(--space-2xs); align-items: center; margin-left: auto; }
+.yearbook-cover-thumbnail { width: 160px; max-height: 180px; object-fit: contain; background: var(--color-paper-2); }
+.yearbook-image-editor { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-md); }
+.yearbook-image-editor.has-photo { grid-template-columns: 116px minmax(0, 1fr); }
+.yearbook-block-thumbnail { width: 116px; height: 116px; object-fit: contain; background: var(--color-surface); }
+.yearbook-image-editor .block-media-fields { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.yearbook-photo-picker { min-width: 0; padding-top: var(--space-lg); border-top: var(--rule-thin) solid var(--color-rule); }
+.yearbook-photo-picker h3 { font-family: var(--font-body); font-size: var(--text-base); }
+.yearbook-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: var(--space-sm); max-height: 28rem; margin-top: var(--space-md); padding: var(--space-2xs); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.yearbook-photo-option { display: grid; align-content: start; gap: var(--space-xs); min-width: 0; padding: var(--space-xs); border: var(--rule-thin) solid var(--color-rule); background: var(--color-paper); cursor: pointer; font-weight: 400; }
+.yearbook-photo-option > img { width: 100%; height: 112px; object-fit: contain; background: var(--color-surface); }
+.yearbook-photo-option.selected { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.yearbook-photo-option.included { cursor: default; }
+.yearbook-photo-option:has(input:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.yearbook-photo-option-label { display: flex; align-items: start; gap: var(--space-xs); min-width: 0; }
+.yearbook-photo-option-label input { margin-top: 2px; }
+.yearbook-photo-option-label > span { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.yearbook-photo-option small { color: var(--color-muted); font-size: 0.75rem; }
+.yearbook-photo-option.selected small { color: var(--color-accent); }
+.yearbook-photo-picker-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-md); }
+.yearbook-photo-picker-actions > span { flex: 1 1 180px; }
+.yearbook-photo-empty { margin-top: var(--space-md); padding: var(--space-lg); background: var(--color-paper-2); }
+.yearbook-preview-note { margin-bottom: var(--space-md); }
+.yearbook-preview-shell { position: relative; min-height: 420px; border: var(--rule-thin) solid var(--color-rule); background: var(--color-paper-2); }
+.yearbook-preview-shell > .loading-state { padding: var(--space-xl); }
+.yearbook-preview-frame { display: block; width: 100%; height: min(82vh, 1080px); min-height: 420px; border: 0; background: var(--color-surface); }
+.yearbook-preview-frame.is-loading { visibility: hidden; position: absolute; inset: 0; }
+.yearbook-preview-shell > .notice { margin: var(--space-lg); }
+@media (max-width: 55rem) {
+  .yearbook-editor .chapter-number { flex-basis: 50px; }
+  .yearbook-editor .chapter-heading-fields { grid-template-columns: minmax(0, 1fr); }
+  .yearbook-editor .chapter-tools { align-self: flex-start; }
+}
+@media (max-width: 39.99rem) {
+  .yearbook-editor .yearbook-save-bar { top: 0; gap: var(--space-sm); padding: var(--space-sm); }
+  .yearbook-editor .yearbook-save-bar > div { flex-basis: 160px; }
+  .yearbook-editor .yearbook-save-bar .helper { display: none; }
+  .yearbook-editor .yearbook-save-bar .button { padding-inline: var(--space-sm); }
+  .yearbook-editor .chapter-number { flex-basis: 40px; }
+  .yearbook-editor .chapter-heading-fields { flex-basis: calc(100% - 56px); }
+  .yearbook-editor .chapter-tools { width: 100%; justify-content: flex-end; padding-top: var(--space-2xs); border-top: var(--rule-thin) solid var(--color-rule); }
+  .yearbook-editor .chapter-tools .icon-button, .yearbook-editor .block-tools .icon-button { width: 44px; height: 44px; }
+  .yearbook-editor .block-tools { flex-basis: 100%; justify-content: flex-end; }
+  .yearbook-image-editor.has-photo { grid-template-columns: minmax(0, 1fr); }
+  .yearbook-block-thumbnail { width: 100%; height: 160px; }
+  .yearbook-editor .block-editor-top > select { max-width: none; }
+  .yearbook-preview-frame { min-height: 420px; height: 78vh; }
+}
+@media print {
+  .yearbook-editor .yearbook-save-bar, .yearbook-preview-note { display: none; }
+  .yearbook-preview-shell { border: 0; }
+}
