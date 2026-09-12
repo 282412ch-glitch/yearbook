@@ -66,7 +66,7 @@ export class ModelService {
           if (secret) { freshRef = `yearbook:${randomUUID()}`; await this.vault.write(input.credentialMode, freshRef, secret); ref = freshRef; }
           else ref = null;
         }
-        const changed = !old || old.base_url !== urls.baseUrl || old.protocol !== input.protocol || old.model !== input.model || old.credential_ref !== ref || old.stream_enabled !== Number(input.streamEnabled);
+        const changed = !old || old.base_url !== urls.baseUrl || old.protocol !== input.protocol || old.model !== input.model || old.credential_ref !== ref || old.stream_enabled !== Number(input.streamEnabled) || old.max_output_tokens !== input.maxOutputTokens || old.timeout_ms !== input.timeoutMs;
         const now = new Date(Math.max(Date.now(), old ? Date.parse(old.updated_at) + 1 : 0)).toISOString();
         await this.store.write(() => this.store.db.transaction(() => {
           const active = old?.is_active ?? Number(!(this.store.db.prepare('SELECT id FROM model_profiles WHERE is_active = 1').get()));
@@ -133,7 +133,8 @@ export class ModelService {
       let result: CapabilityResult;
       try {
         if (capability === 'streaming' && !row.stream_enabled) throw new ModelError('STREAM_DISABLED', '请先启用流式输出并保存配置，再验证流式能力', 400);
-        const request: ModelRequest = { system: '这是连接能力测试。请严格执行用户要求；不涉及个人生活资料。', messages: [] };
+        // A transport preference applies to every probe, while capability results stay independent.
+        const request: ModelRequest = { system: '这是连接能力测试。请严格执行用户要求；不涉及个人生活资料。', messages: [], stream: !!row.stream_enabled };
         if (capability === 'text' || capability === 'streaming') request.messages = [{ role: 'user', text: '请只回复：连接成功' }];
         if (capability === 'vision') {
           // A fresh random colour is shown only in the image, never given away in the prompt.
@@ -157,7 +158,7 @@ export class ModelService {
           if (!second.text.includes(receipt) || second.toolCalls.length) throw new ModelError('MODEL_CAPABILITY_UNSUPPORTED', '服务未完成工具结果往返，工具能力未确认', 400);
         } else {
           let deltas = 0;
-          const answer = await this.invoke(row, { ...request, stream: capability === 'streaming', onDelta: () => { deltas++; } }, signal);
+          const answer = await this.invoke(row, { ...request, onDelta: () => { deltas++; } }, signal);
           if (!answer.text.trim()) throw invalidResponse();
           if (capability === 'streaming' && deltas === 0) throw new ModelError('MODEL_CAPABILITY_UNSUPPORTED', '未收到可用文字增量，流式能力未确认', 400);
         }

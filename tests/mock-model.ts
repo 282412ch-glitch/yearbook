@@ -114,6 +114,8 @@ export async function startMockModel() {
       if (model === 'limited') return error(res, 429, 'rate_limit_exceeded', 'Too many requests');
       if (model === 'unavailable') return error(res, 503, 'server_error', 'Temporarily unavailable');
       if (model === 'malformed') return writeJson(res, { not_a_supported_response: true });
+      if (model === 'codex-only') return error(res, 400, 'invalid_responses_request', 'invalid codex request', '');
+      if (model === 'stream-only' && !body.stream) return error(res, 400, 'stream_required', 'Stream must be set to true', 'stream');
       if (model === 'timeout') { res.writeHead(200, { 'Content-Type': 'application/json' }); return; }
       const normalized = normalizeRequest(body, responses); const imageUrls = normalized.messages.flatMap(message => message.images);
       if (model === 'no-tools' && normalized.toolNames.length) return error(res, 400, 'unsupported_parameter', 'Tools are not supported', 'tools');

@@ -103,6 +103,7 @@ export function ModelsPanel() {
     {chosen && !form && <div className="model-capabilities">
       <div className="section-title"><h3>{chosen.name} · 能力验证</h3><span className="helper">{chosen.credentialMode === 'none' ? '无需密钥' : chosen.keyPresent ? chosen.credentialMode === 'windows' ? '密钥在 Windows 系统凭据中' : '密钥仅在本次服务会话中' : '密钥未提供或会话已结束'}</span></div>
       <p className="endpoint-text">{chosen.endpointUrl}</p>
+      <p className="helper">各项验证均使用已保存配置的{chosen.streamEnabled ? '流式' : '普通'}请求方式；每项能力分别记录，文本成功不会自动标记其他能力。</p>
       <ul>{capabilities.map(({ key, name }) => { const capability = chosen.capabilities[key]; return <li key={key}>
         <div><strong>{name}</strong><span className={`capability-state ${capability.status}`}>{states[capability.status]}</span><p className="helper">{capability.message}{capability.checkedAt ? ` · ${readableTime(capability.checkedAt)}` : ''}</p></div>
         <button className="button secondary" disabled={!!busy || key === 'streaming' && !chosen.streamEnabled} onClick={() => void test(chosen, key)}>{busy === `test-${key}` ? '正在验证…' : `验证${name}`}</button>

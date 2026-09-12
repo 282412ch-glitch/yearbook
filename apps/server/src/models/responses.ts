@@ -22,7 +22,7 @@ export function responsesBody(profile: ModelProfile, request: ModelRequest) {
   }
   return {
     model: profile.model, instructions: request.system, input, store: false, max_output_tokens: profile.maxOutputTokens,
-    include: ['reasoning.encrypted_content'],
+    ...(request.tools?.length || request.messages.some(message => message.providerItems?.length) ? { include: ['reasoning.encrypted_content'] } : {}),
     ...(request.tools?.length ? { tools: request.tools.map(tool => ({ type: 'function', ...tool, strict: false })), tool_choice: request.toolChoice ?? 'auto' } : {}),
     stream: request.stream ?? false,
   };
@@ -33,8 +33,13 @@ export function parseResponses(raw: unknown): ModelResult {
 }
 function parseResponsesValue(raw: unknown): ModelResult {
   const value = object(raw);
-  if (value.error || value.status === 'failed') throw serviceError(400, value);
-  if (value.status === 'incomplete') throw new ModelError('MODEL_OUTPUT_TRUNCATED', '模型输出未完成，请提高输出长度限制或减少素材后重试', 400);
+  if (value.error || value.status === 'failed') throw serviceError(200, value);
+  if (value.status === 'cancelled') throw new ModelError('MODEL_CANCELLED', '模型服务已取消本次生成，未保存部分结果，可以重新尝试', 409);
+  if (value.status === 'incomplete') {
+    if (object(value.incomplete_details).reason === 'content_filter') throw new ModelError('MODEL_REFUSED', '模型服务未能处理本次内容，请修改整理要求后重试', 400);
+    throw new ModelError('MODEL_OUTPUT_TRUNCATED', '模型输出未完成，请提高输出长度限制或减少素材后重试', 400);
+  }
+  if (value.status !== undefined && value.status !== 'completed') throw invalidResponse('模型返回了尚未完成的响应，未保存部分结果，请稍后重试');
   if (!Array.isArray(value.output)) throw invalidResponse();
   const parts: string[] = []; const calls: ModelToolCall[] = [];
   for (const rawItem of value.output) {
@@ -54,12 +59,13 @@ export async function generateResponses(profile: ModelProfile, key: string | nul
   return modelHttp(profile, key, responsesBody(profile, request), request.signal, async response => {
     if (!request.stream) return parseResponses(await readJson(response));
     let result: ModelResult | undefined;
-    await readSse(response, raw => {
+    await readSse(response, (raw, eventName) => {
       const event = object(raw);
-      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') request.onDelta?.(event.delta);
-      if (event.type === 'response.completed') result = parseResponses(event.response);
-      if (event.type === 'response.failed' || event.type === 'error') throw withModelUsage(serviceError(400, event.response ?? event), usage(object(event.response ?? event).usage, 'responses'));
-      if (event.type === 'response.incomplete') throw new ModelError('MODEL_OUTPUT_TRUNCATED', '流式输出未完成，请增加输出长度或减少素材', 400, usage(object(event.response).usage, 'responses'));
+      const type = event.type ?? eventName;
+      if (type === 'response.output_text.delta' && typeof event.delta === 'string') request.onDelta?.(event.delta);
+      if (type === 'response.completed') { result = parseResponses(event.response); return false; }
+      if (type === 'response.failed' || type === 'error') throw withModelUsage(serviceError(200, event.response ?? event), usage(object(event.response ?? event).usage, 'responses'));
+      if (type === 'response.incomplete' || type === 'response.cancelled') parseResponses({ ...object(event.response), status: type.slice('response.'.length) });
     });
     if (!result) throw invalidResponse('流式连接结束前没有收到 Responses 完成事件，可重试');
     return result;

@@ -29,7 +29,7 @@ export function parseChat(raw: unknown): ModelResult {
 }
 function parseChatValue(raw: unknown): ModelResult {
   const value = object(raw);
-  if (value.error) throw serviceError(400, value);
+  if (value.error) throw serviceError(200, value);
   if (!Array.isArray(value.choices) || !value.choices.length) throw invalidResponse();
   const choice = object(value.choices[0]); const message = object(choice.message);
   if (choice.finish_reason === 'length') throw new ModelError('MODEL_OUTPUT_TRUNCATED', '模型输出达到长度上限，请增加输出长度或减少素材', 400);
@@ -46,10 +46,10 @@ export async function generateChat(profile: ModelProfile, key: string | null, re
     const calls = new Map<number, ModelToolCall>();
     try {
     await readSse(response, raw => {
-      if (raw === '[DONE]') { done = true; return; }
+      if (raw === '[DONE]') { done = true; return false; }
       const item = object(raw);
       if (item.usage) tokenUsage = usage(item.usage, 'chat');
-      if (item.error) throw serviceError(400, item);
+      if (item.error) throw serviceError(200, item);
       if (!Array.isArray(item.choices)) throw invalidResponse();
       for (const rawChoice of item.choices) {
         const choice = object(rawChoice);

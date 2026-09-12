@@ -16,6 +16,7 @@ import { createBackup } from '../apps/server/src/backups.js';
 import { createApp } from '../apps/server/src/app.js';
 import { CredentialVault, type CredentialDriver } from '../apps/server/src/models/credentials.js';
 import { ModelService } from '../apps/server/src/models/service.js';
+import { serviceError } from '../apps/server/src/models/transport.js';
 import { startMockModel } from './mock-model.js';
 import { backup, json, photo, record, restore, upload } from './helpers.js';
 
@@ -78,7 +79,7 @@ describe('双协议本机 HTTP 模拟与模型配置', () => {
       const sent = mock.requests.at(-1)!;
       expect(sent.path).toBe(`/prefix/v1/${protocol === 'responses' ? 'responses' : 'chat/completions'}`);
       expect(sent.body.model).toBe('mock-all'); expect(sent.body.store).toBe(false);
-      if (protocol === 'responses') { expect(sent.body.max_output_tokens).toBe(1536); expect(sent.body.max_completion_tokens).toBeUndefined(); expect(sent.body.instructions).toContain('连接能力测试'); }
+      if (protocol === 'responses') { expect(sent.body.max_output_tokens).toBe(1536); expect(sent.body.max_completion_tokens).toBeUndefined(); expect(sent.body.instructions).toContain('连接能力测试'); expect(sent.body.include).toBeUndefined(); }
       else { expect(sent.body.max_completion_tokens).toBe(1536); expect(sent.body.max_output_tokens).toBeUndefined(); expect(sent.body.messages[0].role).toBe('system'); }
     });
 
@@ -135,12 +136,29 @@ describe('双协议本机 HTTP 模拟与模型配置', () => {
 
     it(`${protocol} 缺少能力或假接受图片/工具时不误报支持`, async () => {
       for (const [model, capability] of [['no-tools', 'tools'], ['ignore-tools', 'tools'], ['broken-tool-roundtrip', 'tools'], ['no-vision', 'vision'], ['wrong-vision', 'vision'], ['no-stream', 'streaming']] as const) {
-        const profile = await createProfile(protocol, model, { streamEnabled: true });
+        let profile = await createProfile(protocol, model, { streamEnabled: capability !== 'streaming' });
         const text = await service.test(profile.id, 'text'); expect(text.result.status).toBe('supported');
+        if (capability === 'streaming') profile = await service.save(toInput(profile, { streamEnabled: true }), profile.id);
         const checked = await service.test(profile.id, capability); expect(checked.result.status, `${model} ${capability}`).toBe('unsupported');
-        expect(checked.profile.capabilities.text.status).toBe('supported');
+        expect(checked.profile.capabilities.text.status).toBe(capability === 'streaming' ? 'unknown' : 'supported');
         for (const unrelated of ['vision', 'tools', 'streaming'] as const) if (unrelated !== capability) expect(checked.profile.capabilities[unrelated].status).toBe('unknown');
       }
+    });
+
+    it(`${protocol} 流式服务的文本、图片和工具验证沿用已保存设置，各项结果仍独立`, async () => {
+      const original = await createProfile(protocol, 'stream-only');
+      const rejected = await service.test(original.id, 'text');
+      expect(rejected.result.status).toBe('error'); expect(rejected.result.message).toContain('服务要求流式请求');
+      const profile = await service.save(toInput(original, { streamEnabled: true }), original.id);
+      const start = mock.requests.length;
+      for (const capability of ['text', 'vision', 'tools'] as const) {
+        const checked = await service.test(profile.id, capability);
+        expect(checked.result.status).toBe('supported');
+        expect(checked.profile.capabilities.streaming.status).toBe('unknown');
+        if (capability === 'text') { expect(checked.profile.capabilities.vision.status).toBe('unknown'); expect(checked.profile.capabilities.tools.status).toBe('unknown'); }
+      }
+      expect(mock.requests.slice(start)).toHaveLength(4);
+      expect(mock.requests.slice(start).every(request => request.body.stream === true)).toBe(true);
     });
 
     it(`${protocol} 鉴权、模型不存在、限流、服务故障与畸形结构有清楚分类且不泄漏密钥`, async () => {
@@ -174,6 +192,32 @@ describe('双协议本机 HTTP 模拟与模型配置', () => {
       }
     });
   }
+
+  it('网关拒绝保留安全状态与错误分类，不把客户端请求限制误报成密钥失效', async () => {
+    const profile = await createProfile('responses', 'codex-only');
+    const checked = await service.test(profile.id, 'text');
+    expect(checked.result.status).toBe('error');
+    expect(checked.result.message).toContain('HTTP 400');
+    expect(checked.result.message).toContain('invalid_responses_request');
+    expect(checked.result.message).toContain('invalid codex request');
+    expect(checked.profile.capabilities.tools.status).toBe('unknown');
+    const secret = `PRIVATE-TEST-SECRET-${randomUUID()}`;
+    const failure = serviceError(400, { error: { code: 'unsupported_parameter', message: `Unsupported parameter ${secret}`, param: `max_output_tokens.${secret}`, extra: { authorization: secret } } });
+    expect(failure.code).toBe('MODEL_PARAMETER_UNSUPPORTED'); expect(failure.message).toContain('max_output_tokens');
+    expect(JSON.stringify(failure)).not.toContain(secret); expect(failure.message).not.toContain(secret);
+    const unknown = serviceError(400, { error: { code: secret, type: secret, message: secret, param: secret } });
+    expect(unknown.message).toContain('HTTP 400'); expect(unknown.message).not.toContain(secret);
+  });
+
+  it('输出上限或超时变化后重新验证，避免把旧请求条件的结果当作当前能力', async () => {
+    let profile = await createProfile('responses');
+    await service.test(profile.id, 'text');
+    profile = await service.save(toInput(profile, { maxOutputTokens: 1024 }), profile.id);
+    expect(profile.capabilities.text.status).toBe('unknown');
+    await service.test(profile.id, 'text');
+    profile = await service.save(toInput(profile, { timeoutMs: 90000 }), profile.id);
+    expect(profile.capabilities.text.status).toBe('unknown');
+  });
 
   it('凭据只留引用，编辑留空保留密钥，失败写入不损坏配置，备份没有密钥', async () => {
     const secret = `FAKE-WINDOWS-SECRET-${randomUUID()}`;

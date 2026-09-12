@@ -20,19 +20,31 @@ export function usage(value: unknown, protocol: 'responses' | 'chat'): ModelUsag
   return Object.keys(result).length ? result : null;
 }
 export function serviceError(status: number, value: unknown): ModelError {
-  const error = object(object(value).error);
-  const hint = [error.code, error.type, error.message, error.param].filter(v => typeof v === 'string').join(' ').toLowerCase();
-  if (status === 401 || status === 403) return new ModelError('MODEL_AUTH_FAILED', '模型服务鉴权失败或没有访问权限，请检查 API Key、账号权限和模型名称', 400);
-  if (status === 429) return new ModelError('MODEL_RATE_LIMITED', '模型服务限流或额度不足，请稍后重试并检查服务额度', 429);
-  if (status >= 500) return new ModelError('MODEL_SERVICE_UNAVAILABLE', '模型服务暂时异常，请稍后重试', 503);
-  if (/model.{0,30}(not.?found|does not exist|permission)|model_not_found/.test(hint)) return new ModelError('MODEL_NOT_FOUND', '模型不存在或账号无权使用，请核对手填的模型名称', 400);
-  if (status === 404) return new ModelError('MODEL_ENDPOINT_NOT_FOUND', '模型或接口地址不存在，请检查最终请求地址、协议和模型名称', 400);
+  // Responses SSE errors use top-level fields; HTTP failures commonly nest them.
+  // Upstream strings are inspected only for classification, never echoed into logs/UI.
+  const root = object(value);
+  const error = Object.keys(object(root.error)).length ? object(root.error) : root;
+  const hint = [error.code, error.type, error.message, error.param, root.detail, typeof root.error === 'string' ? root.error : null].filter(v => typeof v === 'string').join(' ').toLowerCase();
+  const codes = ['invalid_api_key', 'authentication_error', 'permission_denied', 'rate_limit_exceeded', 'insufficient_quota', 'server_error', 'service_unavailable', 'overloaded_error', 'model_not_found', 'unsupported_parameter', 'invalid_parameter', 'invalid_request_error', 'invalid_responses_request', 'new_api_error', 'stream_required'];
+  const upstreamCode = [error.code, error.type].find(v => typeof v === 'string' && codes.includes(v));
+  const parameters = ['max_output_tokens', 'max_completion_tokens', 'max_tokens', 'stream', 'stream_options', 'include', 'tools', 'tool_choice', 'reasoning', 'instructions', 'input', 'messages', 'store', 'model', 'parallel_tool_calls', 'text', 'temperature', 'top_p'];
+  const parameter = parameters.find(field => error.param === field || typeof error.param === 'string' && (error.param.startsWith(`${field}.`) || error.param.startsWith(`${field}[`)));
+  const diagnostic = [Number.isInteger(status) && status >= 100 && status <= 599 ? `HTTP ${status}` : '', upstreamCode, parameter ? `参数 ${parameter}` : ''].filter(Boolean).join('；');
+  const fail = (code: string, message: string, localStatus = 400) => new ModelError(code, `${message}${diagnostic ? `（${diagnostic}）` : ''}`, localStatus);
+  if (status === 401 || status === 403 || /invalid_api_key|authentication_error|permission_denied/.test(hint)) return fail('MODEL_AUTH_FAILED', '模型服务鉴权失败或没有访问权限，请检查 API Key、账号权限和模型名称');
+  if (status === 429 || /rate_limit_exceeded|insufficient_quota/.test(hint)) return fail('MODEL_RATE_LIMITED', '模型服务限流或额度不足，请稍后重试并检查服务额度', 429);
+  if (status >= 500 || /server_error|service_unavailable|overloaded_error/.test(hint)) return fail('MODEL_SERVICE_UNAVAILABLE', '模型服务暂时异常，请稍后重试', 503);
+  if (/model.{0,30}(not.?found|does not exist|permission)|model_not_found/.test(hint)) return fail('MODEL_NOT_FOUND', '模型不存在或账号无权使用，请核对手填的模型名称');
+  if (status === 404) return fail('MODEL_ENDPOINT_NOT_FOUND', '模型或接口地址不存在，请检查最终请求地址、协议和模型名称');
+  if (/invalid codex request/.test(hint)) return fail('MODEL_GATEWAY_REJECTED', '服务返回 invalid codex request，拒绝了当前 Responses 请求。该服务有额外的 Codex 请求校验，请确认它是否支持第三方应用调用');
+  if (/stream_required|stream.{0,35}(must|require).{0,20}true|stream.{0,20}must be enabled/.test(hint)) return fail('MODEL_STREAM_REQUIRED', '服务要求流式请求，请启用流式输出、保存配置后重新验证');
   if (/(image|vision|tool|function|stream)/.test(hint) && /(not.support|unsupported|invalid|unknown|not.allow)/.test(hint)) {
-    if (/tool|function/.test(hint)) return new ModelError('MODEL_TOOLS_UNSUPPORTED', '服务不支持此次工具调用，可使用文字整理的固定流程', 400);
-    if (/image|vision/.test(hint)) return new ModelError('MODEL_VISION_UNSUPPORTED', '服务不支持此次图片理解，可继续使用已有文字和用户图注', 400);
-    if (/stream/.test(hint)) return new ModelError('MODEL_STREAM_UNSUPPORTED', '服务不支持此次流式输出，可使用普通响应', 400);
+    if (/tool|function/.test(hint)) return fail('MODEL_TOOLS_UNSUPPORTED', '服务不支持此次工具调用，可使用文字整理的固定流程');
+    if (/image|vision/.test(hint)) return fail('MODEL_VISION_UNSUPPORTED', '服务不支持此次图片理解，可继续使用已有文字和用户图注');
+    if (/stream/.test(hint)) return fail('MODEL_STREAM_UNSUPPORTED', '服务不支持此次流式输出，可使用普通响应');
   }
-  return new ModelError('MODEL_REQUEST_REJECTED', '模型服务未接受请求，请检查所选兼容协议、模型与输出长度限制', 400);
+  if (parameter && /unsupported|not.support|unknown parameter|unrecognized|not.allow/.test(hint)) return fail('MODEL_PARAMETER_UNSUPPORTED', `服务不接受 ${parameter} 参数，请核对该兼容接口的参数要求`);
+  return fail('MODEL_REQUEST_REJECTED', '模型服务未接受请求，请检查所选兼容协议、模型与输出长度限制');
 }
 
 /** Bound both JSON and SSE responses. Never include upstream response bodies in diagnostics. */
@@ -78,18 +90,18 @@ export async function modelHttp<T>(profile: ModelProfile, key: string | null, bo
 }
 
 /** SSE framing supports UTF-8 fragments, CRLF, multiline data, comments and terminal markers. */
-export async function readSse(response: Response, onEvent: (data: unknown, event: string) => void): Promise<void> {
+export async function readSse(response: Response, onEvent: (data: unknown, event: string) => void | boolean): Promise<void> {
   if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) throw new ModelError('MODEL_CAPABILITY_UNSUPPORTED', '服务没有返回有效的 SSE 流式响应', 400);
   const reader = response.body.getReader(); const decoder = new TextDecoder();
   let buffer = ''; let size = 0;
-  const consume = (frame: string) => {
+  const consume = (frame: string): boolean => {
     const lines = frame.split(/\r?\n/);
     const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-    if (!data) return;
+    if (!data) return true;
     const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() ?? '';
-    if (data === '[DONE]') { onEvent('[DONE]', event); return; }
+    if (data === '[DONE]') { onEvent('[DONE]', event); return false; }
     let value: unknown; try { value = JSON.parse(data); } catch { throw invalidResponse('流式事件不是有效 JSON，无法确认生成已完成'); }
-    onEvent(value, event);
+    return onEvent(value, event) !== false;
   };
   try {
     while (true) {
@@ -98,8 +110,12 @@ export async function readSse(response: Response, onEvent: (data: unknown, event
       if (size > 8 * 1024 * 1024) throw invalidResponse('流式响应超过大小上限');
       buffer += decoder.decode(next.value, { stream: true });
       let boundary: RegExpMatchArray | null;
-      while ((boundary = buffer.match(/\r?\n\r?\n/))) { consume(buffer.slice(0, boundary.index)); buffer = buffer.slice(boundary.index! + boundary[0].length); }
+      while ((boundary = buffer.match(/\r?\n\r?\n/))) {
+        if (!consume(buffer.slice(0, boundary.index))) return;
+        buffer = buffer.slice(boundary.index! + boundary[0].length);
+      }
     }
-    buffer += decoder.decode(); if (buffer.trim()) consume(buffer);
+    buffer += decoder.decode();
+    if (buffer.trim()) throw invalidResponse('流式连接在完整事件结束前中断，请重试');
   } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
