@@ -1,0 +1,56 @@
+{
+  "name": "yearbook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "一年一册：在本机记录与保存生活",
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsup --config tsup.config.ts && vite build --config apps/web/vite.config.ts",
+    "start": "node apps/server/dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "stop": "node scripts/launcher.mjs stop",
+    "launch": "node scripts/launcher.mjs start"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.3.0",
+    "@fastify/static": "^10.1.3",
+    "@fontsource/noto-sans-sc": "^5.2.9",
+    "@fontsource/noto-serif-sc": "^5.2.9",
+    "adm-zip": "^0.6.1",
+    "better-sqlite3": "^12.6.2",
+    "exifr": "^7.1.3",
+    "fastify": "^5.7.0",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.0",
+    "sharp": "^0.35.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  }
+}
