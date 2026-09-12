@@ -2,7 +2,7 @@
 
 在 Windows 本机记录文字与照片，通过浏览器回顾生活。
 
-当前是 **75% 节点开发版**：记录、照片、时间轴/月历、中文搜索、回顾补记、第一次、盲盒、备份恢复、手动年册及导出任务；新增双协议模型配置、能力验证、AI 整理、月报、Agent、草稿版本及来源回查。已完成模型配置故障补修；真实 AnyRouter 模型列表可用，但生成请求仍被网关拒绝，详见 [诊断记录](docs/MODEL_TROUBLESHOOTING.md)。未来信和完整 PDF/导出排版验收留待最终节点；参见 [实施计划](docs/PLAN.md)，续接阅读 [HANDOFF](docs/HANDOFF.md)。
+当前是 **75% 节点开发版**：记录、照片、时间轴/月历、中文搜索、回顾补记、第一次、盲盒、备份恢复、手动年册及导出任务；新增双协议模型配置、能力验证、AI 整理、月报、Agent、草稿版本及来源回查。模型模块已补修；Codego 真实标题请求已成功，AnyRouter 生成仍被网关拒绝，历史失败与验证边界见 [诊断记录](docs/MODEL_TROUBLESHOOTING.md)。未来信和完整 PDF/导出排版验收留待最终节点；参见 [实施计划](docs/PLAN.md)，续接阅读 [HANDOFF](docs/HANDOFF.md)。
 
 ## 安装与运行
 
@@ -76,7 +76,7 @@ npm start
 
 - 启动器错误查看 `.runtime/server.log`。首次运行找不到构建，请执行 `npm ci`、`npm run build`。
 - 模型生成失败查看“任务与生成进度”，已完成阶段会保留；检查配置后继续/重试。取消会中断请求。关闭服务后未完成任务在下次启动标为可重试，不自动发送资料。
-- 模型能力以逐项验证结果为准。自动化使用本机模拟服务；AnyRouter 已做真实诊断，生成接口仍返回 `invalid codex request`，尚无真实生成成功或质量验收结论。设置页现在显示安全的 HTTP 状态与具体错误类别，见 [排查记录](docs/MODEL_TROUBLESHOOTING.md)。
+- 模型能力以逐项验证结果为准。自动化使用本机模拟服务；Codego 真实标题请求已成功，但此前两次失败无法从旧提示确定具体根因；AnyRouter 生成仍返回 `invalid codex request`。HTTP 200 中的生成失败与连接拒绝已区分，完整真实编册质量仍需验收，见 [排查记录](docs/MODEL_TROUBLESHOOTING.md)。
 - 若意外断电留下无法读取的 `.runtime/launcher.lock`，确认所有启动窗口已关闭后删除这个锁文件即可；不要删除 `data`。`data/.instance-lock` 在旧进程已退出且信息有效时会自动回收，若损坏应先确认应用已停止再检查。
 
 其他说明：[架构](docs/ARCHITECTURE.md) · [接口契约](docs/CONTRACT.md) · [AI 配置状态](docs/AI_CONFIGURATION.md) · [验收](docs/ACCEPTANCE.md)。

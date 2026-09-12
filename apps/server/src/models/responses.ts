@@ -31,9 +31,16 @@ export function parseResponses(raw: unknown): ModelResult {
   try { return parseResponsesValue(raw); }
   catch (error) { throw withModelUsage(error, usage(object(raw).usage, 'responses')); }
 }
+function hasErrorDetails(value: unknown): boolean {
+  if (!value) return false;
+  // Some compatible gateways use an empty object instead of null on successful responses.
+  // Only an empty/null-valued shell is tolerated; meaningful or malformed errors still fail.
+  if (typeof value === 'object' && !Array.isArray(value)) return Object.values(value).some(item => item !== null && item !== undefined && item !== '');
+  return true;
+}
 function parseResponsesValue(raw: unknown): ModelResult {
   const value = object(raw);
-  if (value.error || value.status === 'failed') throw serviceError(200, value);
+  if (hasErrorDetails(value.error) || value.status === 'failed') throw serviceError(200, value);
   if (value.status === 'cancelled') throw new ModelError('MODEL_CANCELLED', '模型服务已取消本次生成，未保存部分结果，可以重新尝试', 409);
   if (value.status === 'incomplete') {
     if (object(value.incomplete_details).reason === 'content_filter') throw new ModelError('MODEL_REFUSED', '模型服务未能处理本次内容，请修改整理要求后重试', 400);
@@ -64,7 +71,7 @@ export async function generateResponses(profile: ModelProfile, key: string | nul
       const type = event.type ?? eventName;
       if (type === 'response.output_text.delta' && typeof event.delta === 'string') request.onDelta?.(event.delta);
       if (type === 'response.completed') { result = parseResponses(event.response); return false; }
-      if (type === 'response.failed' || type === 'error') throw withModelUsage(serviceError(200, event.response ?? event), usage(object(event.response ?? event).usage, 'responses'));
+      if (type === 'response.failed' || type === 'error') throw withModelUsage(serviceError(200, event.response ?? event, type), usage(object(event.response ?? event).usage, 'responses'));
       if (type === 'response.incomplete' || type === 'response.cancelled') parseResponses({ ...object(event.response), status: type.slice('response.'.length) });
     });
     if (!result) throw invalidResponse('流式连接结束前没有收到 Responses 完成事件，可重试');

@@ -55,15 +55,16 @@ function draftFor(records: Json[], prompt: string): Json {
     photos: onlyTitle || questions.length || prompt.includes('完整保留原意') ? [] : photos, chapters: [] };
 }
 function error(res: ServerResponse, status: number, code: string, message: string, param?: string) { writeJson(res, { error: { code, message, type: code, ...(param ? { param } : {}) } }, status); }
-function wireResult(text: string, calls: WireCall[], responses: boolean, model: string) {
+function wireResult(text: string, calls: WireCall[], responses: boolean, model: string, emptyError = false) {
   if (responses) return { id: `resp_${randomUUID()}`, status: model === 'truncated' ? 'incomplete' : 'completed',
     output: calls.length ? [{ type: 'reasoning', id: 'rs_mock', summary: [], encrypted_content: 'mock-encrypted-reasoning-state' }, ...calls.map(call => ({ type: 'function_call', id: `fc_${call.id}`, call_id: call.id, name: call.name, arguments: call.arguments, status: 'completed' }))] : [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }],
+    ...(emptyError ? { error: {} } : {}),
     ...(model === 'no-usage' ? {} : { usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18 } }) };
   return { id: `chatcmpl_${randomUUID()}`, object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text || null,
     ...(calls.length ? { tool_calls: calls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } })) } : {}) }, finish_reason: model === 'truncated' ? 'length' : calls.length ? 'tool_calls' : 'stop' }],
     ...(model === 'no-usage' ? {} : { usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } }) };
 }
-async function streamResult(res: ServerResponse, text: string, calls: WireCall[], responses: boolean, model: string) {
+async function streamResult(res: ServerResponse, text: string, calls: WireCall[], responses: boolean, model: string, emptyError = false) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
   const frames: string[] = [': local mock stream\r\n\r\n'];
   const event = (name: string, value: unknown) => frames.push(`event: ${name}\r\ndata: ${JSON.stringify(value)}\r\n\r\n`);
@@ -73,7 +74,7 @@ async function streamResult(res: ServerResponse, text: string, calls: WireCall[]
       event('response.output_item.added', { type: 'response.output_item.added', output_index: index + 1, item: { type: 'function_call', call_id: call.id, name: call.name, arguments: '' } });
       event('response.function_call_arguments.delta', { type: 'response.function_call_arguments.delta', output_index: index + 1, delta: call.arguments });
     });
-    if (model !== 'stream-cutoff') event(model === 'truncated' ? 'response.incomplete' : 'response.completed', { type: model === 'truncated' ? 'response.incomplete' : 'response.completed', response: wireResult(text, calls, true, model) });
+    if (model !== 'stream-cutoff') event(model === 'truncated' ? 'response.incomplete' : 'response.completed', { type: model === 'truncated' ? 'response.incomplete' : 'response.completed', response: wireResult(text, calls, true, model, emptyError) });
   } else {
     if (text) for (const delta of [text.slice(0, 1), text.slice(1)]) event('message', { choices: [{ index: 0, delta: { content: delta }, finish_reason: null }] });
     calls.forEach((call, index) => {
@@ -150,8 +151,10 @@ export async function startMockModel() {
         const material = materialFrom(normalized);
         if (material.length) text = JSON.stringify(draftFor(material, prompt));
       }
-      if (body.stream) await streamResult(res, text, calls, responses, model);
-      else writeJson(res, wireResult(text, calls, responses, model));
+      // This fixture changes only the response envelope for actual material, not short capability probes.
+      const emptyError = model === 'empty-error-draft' && materialFrom(normalized).length > 0;
+      if (body.stream) await streamResult(res, text, calls, responses, model, emptyError);
+      else writeJson(res, wireResult(text, calls, responses, model, emptyError));
     })().catch(() => { if (!res.headersSent) error(res, 500, 'mock_error', 'Local mock could not parse this request'); else res.destroy(); });
   });
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });

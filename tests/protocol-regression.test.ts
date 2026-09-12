@@ -107,8 +107,52 @@ describe('模型协议完成与错误边界回归', () => {
     await expect(generateResponses(server.profile('responses'), null, { ...request, stream: true })).rejects.toMatchObject({ code: 'MODEL_RATE_LIMITED', usage: null });
   });
 
+  it('HTTP 200 中未分类的 SSE error 明确为生成失败，保留事件类型且不回显上游内容', async () => {
+    const privateMessage = `DO-NOT-ECHO-${randomUUID()}`;
+    const server = await fixture(response => sendSse(response, sse('error', { type: 'error', code: privateMessage, message: privateMessage })));
+    const failure = await generateResponses(server.profile('responses'), null, { ...request, stream: true }).then(
+      () => { throw new Error('明确的错误事件不能作为生成成功'); }, error => error as { code: string; message: string },
+    );
+    expect(failure.code).toBe('MODEL_GENERATION_FAILED');
+    expect(failure.message).toContain('HTTP 200'); expect(failure.message).toContain('事件 error');
+    expect(failure.message).not.toContain('检查所选兼容协议'); expect(failure.message).not.toContain(privateMessage);
+  });
+
   for (const stream of [false, true]) {
     const mode = stream ? '流式' : '普通';
+
+    for (const [label, error] of [['空对象', {}], ['错误字段为 null', { code: null, message: null }]] as const) {
+      it(`Responses ${mode} completed 带${label} error 时仍返回完整文字和实际用量`, async () => {
+        const value = responseValue('completed', text, { error });
+        const server = await fixture(response => stream
+          ? sendSse(response, sse('response.completed', { type: 'response.completed', response: value }))
+          : sendJson(response, value));
+        const result = await generateResponses(server.profile('responses'), null, { ...request, stream });
+        expect(result.text).toBe(text); expect(result.toolCalls).toEqual([]); expect(result.usage).toEqual(expectedUsage);
+        expect(server.requests).toHaveLength(1);
+      });
+
+      it(`Responses ${mode} 明确 failed 即使 error 为${label}也必须拒绝`, async () => {
+        const value = responseValue('failed', partialText, { error });
+        const server = await fixture(response => stream
+          ? sendSse(response, sse('response.failed', { type: 'response.failed', response: value }))
+          : sendJson(response, value));
+        await expect(generateResponses(server.profile('responses'), null, { ...request, stream })).rejects.toMatchObject({
+          code: expect.stringMatching(/^MODEL_/), usage: expectedUsage,
+        });
+      });
+    }
+
+    it(`Responses ${mode} completed 带明确非空 error 时不能因存在文字而成功`, async () => {
+      const value = responseValue('completed', partialText, {
+        error: { code: 'unsupported_parameter', message: 'Unsupported parameter max_output_tokens', param: 'max_output_tokens' },
+      });
+      const server = await fixture(response => stream
+        ? sendSse(response, sse('response.completed', { type: 'response.completed', response: value }))
+        : sendJson(response, value));
+      await expect(generateResponses(server.profile('responses'), null, { ...request, stream })).rejects.toMatchObject({ code: 'MODEL_PARAMETER_UNSUPPORTED', usage: expectedUsage });
+    });
+
     it(`Responses HTTP 200 ${mode} failed/server_error 归为服务故障并保留实际用量`, async () => {
       const value = responseValue('failed', partialText, { error: { code: 'server_error', message: 'Synthetic service failure' } });
       const server = await fixture(response => stream
@@ -140,4 +184,12 @@ describe('模型协议完成与错误边界回归', () => {
       expect(failure.message).not.toMatch(/提高|增加|长度限制/); expect(failure.message).not.toContain(partialText);
     });
   }
+
+  it('Responses 明确 response.failed 事件不能被嵌套 completed 与空 error 覆盖', async () => {
+    const value = responseValue('completed', partialText, { error: {} });
+    const server = await fixture(response => sendSse(response, sse('response.failed', { type: 'response.failed', response: value })));
+    await expect(generateResponses(server.profile('responses'), null, { ...request, stream: true })).rejects.toMatchObject({
+      code: expect.stringMatching(/^MODEL_/), usage: expectedUsage,
+    });
+  });
 });

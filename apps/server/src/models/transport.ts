@@ -19,7 +19,7 @@ export function usage(value: unknown, protocol: 'responses' | 'chat'): ModelUsag
   for (const [to, from] of Object.entries(mapping)) if (Number.isSafeInteger(item[from]) && item[from] >= 0) result[to as keyof ModelUsage] = item[from];
   return Object.keys(result).length ? result : null;
 }
-export function serviceError(status: number, value: unknown): ModelError {
+export function serviceError(status: number, value: unknown, event?: 'response.failed' | 'error'): ModelError {
   // Responses SSE errors use top-level fields; HTTP failures commonly nest them.
   // Upstream strings are inspected only for classification, never echoed into logs/UI.
   const root = object(value);
@@ -29,7 +29,9 @@ export function serviceError(status: number, value: unknown): ModelError {
   const upstreamCode = [error.code, error.type].find(v => typeof v === 'string' && codes.includes(v));
   const parameters = ['max_output_tokens', 'max_completion_tokens', 'max_tokens', 'stream', 'stream_options', 'include', 'tools', 'tool_choice', 'reasoning', 'instructions', 'input', 'messages', 'store', 'model', 'parallel_tool_calls', 'text', 'temperature', 'top_p'];
   const parameter = parameters.find(field => error.param === field || typeof error.param === 'string' && (error.param.startsWith(`${field}.`) || error.param.startsWith(`${field}[`)));
-  const diagnostic = [Number.isInteger(status) && status >= 100 && status <= 599 ? `HTTP ${status}` : '', upstreamCode, parameter ? `参数 ${parameter}` : ''].filter(Boolean).join('；');
+  const diagnostic = [Number.isInteger(status) && status >= 100 && status <= 599 ? `HTTP ${status}` : '',
+    event === 'response.failed' || event === 'error' ? `事件 ${event}` : root.status === 'failed' ? '响应状态 failed' : '',
+    upstreamCode, parameter ? `参数 ${parameter}` : ''].filter(Boolean).join('；');
   const fail = (code: string, message: string, localStatus = 400) => new ModelError(code, `${message}${diagnostic ? `（${diagnostic}）` : ''}`, localStatus);
   if (status === 401 || status === 403 || /invalid_api_key|authentication_error|permission_denied/.test(hint)) return fail('MODEL_AUTH_FAILED', '模型服务鉴权失败或没有访问权限，请检查 API Key、账号权限和模型名称');
   if (status === 429 || /rate_limit_exceeded|insufficient_quota/.test(hint)) return fail('MODEL_RATE_LIMITED', '模型服务限流或额度不足，请稍后重试并检查服务额度', 429);
@@ -44,6 +46,7 @@ export function serviceError(status: number, value: unknown): ModelError {
     if (/stream/.test(hint)) return fail('MODEL_STREAM_UNSUPPORTED', '服务不支持此次流式输出，可使用普通响应');
   }
   if (parameter && /unsupported|not.support|unknown parameter|unrecognized|not.allow/.test(hint)) return fail('MODEL_PARAMETER_UNSUPPORTED', `服务不接受 ${parameter} 参数，请核对该兼容接口的参数要求`);
+  if (status >= 200 && status < 300) return fail('MODEL_GENERATION_FAILED', '模型服务已建立连接，但在生成期间返回错误，未能完成本次生成；请稍后重试，持续失败时检查模型服务状态', 502);
   return fail('MODEL_REQUEST_REJECTED', '模型服务未接受请求，请检查所选兼容协议、模型与输出长度限制');
 }
 

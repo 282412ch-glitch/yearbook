@@ -326,6 +326,37 @@ describe('双协议本机 HTTP 模拟与模型配置', () => {
     expect(invalid.statusCode).toBe(400);
   });
 
+  it('HTTP 短验证正常而固定整理响应含空 error 时，独立草稿落库且原文与授权来源保留', async () => {
+    const app = await openApp('空错误壳 固定整理');
+    const entry = await record(app, { title: '合成的周末记录', body: '这句原话必须原样保留在记录里。', occurredOn: '2024-05-18', people: ['家人'], tags: ['周末'] });
+    const hidden = await record(app, { body: 'EMPTY_ERROR_TEST_PRIVATE_NOT_SELECTED', occurredOn: '2024-05-18' });
+    const profile = await json<ModelProfile>(app, 'POST', '/api/model-profiles', {
+      name: '空错误壳兼容回归（仅本机模拟）', protocol: 'responses', baseUrl: mock.url, model: 'empty-error-draft', streamEnabled: true,
+    }, 201);
+    for (const capability of ['text', 'streaming'] as const) {
+      const checked = await json<{ profile: ModelProfile; result: { status: string } }>(app, 'POST', `/api/model-profiles/${profile.id}/test`, { capability });
+      expect(checked.result.status).toBe('supported'); expect(checked.profile.capabilities.tools.status).toBe('unknown');
+    }
+    const beforeGeneration = mock.requests.length;
+    const started = await json<TaskItem>(app, 'POST', '/api/ai/tasks', {
+      kind: 'polish', recordIds: [entry.id], profileId: profile.id, instruction: '保留原话，只整理这条合成记录。',
+    }, 202);
+    const finished = await completed(app, started.id);
+    expect(finished.status, finished.errorMessage ?? '').toBe('completed'); expect(finished.toolCalls).toBe(0);
+    expect(finished.result).toMatchObject({ mode: 'fixed', usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18 } });
+    const created = await json<AiDraftItem>(app, 'GET', `/api/ai/drafts/${(finished.result as { draftId: string }).draftId}`);
+    expect(created).toMatchObject({ kind: 'polish', mode: 'fixed', status: 'draft', sourceRecordIds: [entry.id], scopeRecordIds: [entry.id] });
+    expect(created.content.paragraphs).toEqual([{ text: entry.body, sourceRecordIds: [entry.id] }]);
+    expect(created.sourceSnapshots).toHaveLength(1);
+    expect(created.sourceSnapshots[0]).toMatchObject({ id: entry.id, title: entry.title, body: entry.body, occurredOn: entry.occurredOn });
+    expect((await json<AiDraftList>(app, 'GET', '/api/ai/drafts')).total).toBe(1);
+    expect(await json<RecordItem>(app, 'GET', `/api/records/${entry.id}`)).toEqual(entry);
+    const generation = mock.requests.slice(beforeGeneration);
+    expect(generation).toHaveLength(1); expect(generation[0].body.stream).toBe(true); expect(generation[0].body.tools).toBeUndefined();
+    expect(generation[0].body.model).toBe('empty-error-draft');
+    expect(JSON.stringify(generation)).toContain(entry.body); expect(JSON.stringify(generation)).not.toContain(hidden.id); expect(JSON.stringify(generation)).not.toContain(hidden.body);
+  });
+
   it('HTTP 月报含照片与逐段来源，采用不伤手动稿，重生保护，整库可在新中文目录恢复', async () => {
     const app = await openApp('原始 应用');
     const imported = await upload(app, [{ buffer: await photo({ width: 72, height: 120, orientation: 6 }), filename: '家人 河边.jpg' }]);
