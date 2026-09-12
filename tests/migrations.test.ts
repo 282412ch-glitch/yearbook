@@ -42,7 +42,7 @@ describe('旧版备份结构验证后升级', () => {
     if (book) expect((await json<YearbookItem>(target, 'GET', `/api/yearbooks/${book.id}`)).introBody).toBe('手工文字不能丢失。');
     await target.close();
     const restored = new Database(join(workspace.root, '恢复后的 新目录', DATABASE_NAME));
-    try { migrate(restored); migrate(restored); expect(restored.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual([1, 2, 3, 4, 5].map(version => ({ version }))); expect(restored.pragma('foreign_key_check')).toEqual([]); }
+    try { migrate(restored); migrate(restored); expect(restored.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual(MIGRATIONS.map(({ version }) => ({ version }))); expect(restored.pragma('foreign_key_check')).toEqual([]); }
     finally { restored.close(); }
     target = await workspace.open('恢复后的 新目录');
     expect((await json<RecordItem>(target, 'GET', `/api/records/${saved!.id}`)).body).toBe(saved!.body);
@@ -53,6 +53,20 @@ describe('旧版备份结构验证后升级', () => {
       migrate(db);
       db.prepare('DELETE FROM schema_migrations WHERE version = 2').run();
       expect(() => migrate(db)).toThrow('不连续');
+    } finally { db.close(); }
+  });
+
+  it('升级已有任务的资料库时，保留失败详情和请求键，旧任务不会进入回收站', () => {
+    const db = new Database(':memory:'); const id = randomUUID(); const now = new Date().toISOString();
+    try {
+      migrate(db, 5);
+      db.prepare(`INSERT INTO tasks (id, kind, status, progress, message, error_message, idempotency_key, created_at, updated_at)
+        VALUES (?, 'ai', 'failed', 5, '任务失败', '原来的失败原因', 'existing-request', ?, ?)`).run(id, now, now);
+      migrate(db);
+      expect(db.prepare('SELECT id, status, progress, error_message, idempotency_key, deleted_at FROM tasks').get()).toEqual({
+        id, status: 'failed', progress: 5, error_message: '原来的失败原因', idempotency_key: 'existing-request', deleted_at: null,
+      });
+      expect(db.pragma('foreign_key_check')).toEqual([]);
     } finally { db.close(); }
   });
 });

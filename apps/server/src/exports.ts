@@ -27,7 +27,7 @@ async function executeExport(store: DataStore, taskId: string, yearbookId: strin
   const write = <T>(operation: () => T | Promise<T>) => store.write(() => {
     if (signal.aborted || pausedExports.has(store)) throw new AppError(409, 'EXPORT_STOPPED', '导出已中止，可在任务页重试');
     const task = getTask(store, taskId);
-    if (task.status === 'cancelled' || task.cancelRequested) throw new AppError(409, 'EXPORT_STOPPED', '导出已取消');
+    if (task.deletedAt || task.status === 'cancelled' || task.cancelRequested) throw new AppError(409, 'EXPORT_STOPPED', '导出已取消');
     return operation();
   });
   try {
@@ -88,7 +88,7 @@ export function requestExport(store: DataStore, yearbookId: string, format: Expo
 }
 
 export function resumeExport(store: DataStore, task: TaskItem) {
-  if (task.status !== 'pending' || !task.yearbookId || !/^yearbook-(html|pdf)$/.test(task.kind)) return;
+  if (task.deletedAt || task.status !== 'pending' || !task.yearbookId || !/^yearbook-(html|pdf)$/.test(task.kind)) return;
   const active = runningExports(store);
   if (pausedExports.has(store) || active.has(task.id)) return;
   const runtime: ExportRuntime = { controller: new AbortController(), promise: Promise.resolve() };

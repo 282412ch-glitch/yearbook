@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, FileText, History, LoaderCircle, Plus, RotateCcw, Save, Search, Square, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, FileText, History, ListChecks, LoaderCircle, Plus, RotateCcw, Save, Search, Square, Trash2, X } from 'lucide-react';
 import {
   aiDraftContentSchema, aiTaskInputSchema, localDate, type AiAdoptResult, type AiDraftChapter, type AiDraftContent,
   type AiDraftItem, type AiDraftList, type AiDraftVersion, type AiParagraph, type AiPhoto, type AiSourceSnapshot,
   type AiTaskDetail, type AiTaskInput, type AiTaskKind, type AiTaskResult, type Metadata, type ModelProfileList,
-  type RecordItem, type RecordList, type TaskItem, type YearbookList,
+  type RecordItem, type RecordList, type TaskItem, type TaskList, type YearbookList,
 } from '@yearbook/shared';
 import { api, errorText, readableDate, readableTime, useResource } from './api';
 import { EmptyState, ErrorNotice, Loading, PageHeading, StatusNotice } from './components';
@@ -35,48 +35,67 @@ function TaskDetails({ task }: { task: TaskItem }) {
     {detail.data.warnings.map((warning, i) => <p className="helper" key={i}>{warning}</p>)}
   </>}</div>;
 }
-function TaskCard({ task, reload, highlighted }: { task: TaskItem; reload: () => void; highlighted?: boolean }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [expanded, setExpanded] = useState(false);
-  async function action(kind: 'cancel' | 'retry') {
-    setBusy(true); setError('');
-    try { await api(`/api/tasks/${task.id}/${kind}`, { method: 'POST' }); reload(); }
-    catch (error) { setError(errorText(error)); } finally { setBusy(false); }
+type TaskAction = 'cancel' | 'retry' | 'trash' | 'restore';
+function TaskCard({ task, reload, highlighted }: { task: TaskItem; reload: (action: TaskAction) => void; highlighted?: boolean }) {
+  const [busy, setBusy] = useState<TaskAction | null>(null); const [error, setError] = useState(''); const [expanded, setExpanded] = useState(false);
+  async function action(kind: TaskAction) {
+    setBusy(kind); setError('');
+    try { await api(`/api/tasks/${task.id}${kind === 'trash' ? '' : `/${kind}`}`, { method: kind === 'trash' ? 'DELETE' : 'POST' }); reload(kind); }
+    catch (error) { setError(errorText(error)); } finally { setBusy(null); }
   }
   const result = resultOf(task);
+  const active = ['pending', 'running'].includes(task.status);
   return <article className={`ai-task-card ${highlighted ? 'highlighted' : ''}`} id={`task-${task.id}`} aria-label={`${taskKind(task)}，${statuses[task.status]}`}>
     <div className="ai-task-head"><div><span className={`ai-status ${task.status}`}>{task.status === 'running' && <LoaderCircle size={15} className="spin" />}{statuses[task.status]}</span><h2>{taskKind(task)}</h2><time className="helper" dateTime={task.createdAt}>{readableTime(task.createdAt)}</time></div><div className="inline-actions">
-      {['pending', 'running'].includes(task.status) && <button className="button secondary" disabled={busy} onClick={() => void action('cancel')}><Square size={15} />取消任务</button>}
-      {['failed', 'cancelled'].includes(task.status) && <button className="button secondary" disabled={busy} onClick={() => void action('retry')}><RotateCcw size={16} />继续 / 重试</button>}
+      {!task.deletedAt && active && <button className="button secondary" disabled={!!busy} onClick={() => void action('cancel')}><Square size={15} />取消任务</button>}
+      {!task.deletedAt && ['failed', 'cancelled'].includes(task.status) && <button className="button secondary" disabled={!!busy} onClick={() => void action('retry')}><RotateCcw size={16} />继续 / 重试</button>}
       {task.status === 'completed' && result.draftId && <Link className="button primary" to={`/ai/drafts/${result.draftId}`}>查看草稿<ArrowRight size={16} /></Link>}
       {task.status === 'completed' && task.yearbookId && task.kind.startsWith('yearbook-') && <a className="button primary" href={`/api/yearbooks/${task.yearbookId}/export/${task.kind === 'yearbook-pdf' ? 'pdf' : 'html'}?taskId=${task.id}`}>下载{task.kind === 'yearbook-pdf' ? ' PDF' : ' HTML ZIP'}</a>}
+      {task.deletedAt ? <button className="button secondary" disabled={!!busy} onClick={() => void action('restore')}><RotateCcw size={16} />{busy === 'restore' ? '正在恢复…' : '恢复任务'}</button> : <button className="text-button danger-text" disabled={!!busy} onClick={() => void action('trash')}><Trash2 size={16} />{busy === 'trash' ? '正在移入…' : active ? '取消并移入回收站' : '移入回收站'}</button>}
     </div></div>
     <div className="ai-task-progress"><progress max={100} value={task.progress} aria-label="任务进度" /><span>{task.progress}%</span></div>
     <p className="helper" role={task.status === 'running' ? 'status' : undefined}>{task.message || '本地服务正在安排任务。'}</p>
-    <ErrorNotice message={task.errorMessage || error} />
+    {task.deletedAt && <p className="helper">移入时间：<time dateTime={task.deletedAt}>{readableTime(task.deletedAt)}</time></p>}
+    <ErrorNotice message={error || task.errorMessage || ''} />
     {task.kind === 'ai' && <><button className="text-button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起阶段与用量' : '查看阶段与用量'}</button>{expanded && <TaskDetails task={task} />}</>}
   </article>;
 }
 
 export function TasksPage() {
-  const [params] = useSearchParams(); const highlighted = params.get('task');
+  const [params, setParams] = useSearchParams(); const highlighted = params.get('task'); const deleted = params.get('deleted') === 'true';
   const [items, setItems] = useState<TaskItem[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
-  const [revision, setRevision] = useState(0); const [status, setStatus] = useState('');
+  const [revision, setRevision] = useState(0); const [status, setStatus] = useState(''); const [notice, setNotice] = useState('');
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
+    setLoading(true);
     async function refresh() {
       try {
-        const result = await api<{ items: TaskItem[] }>('/api/tasks?limit=100', { signal: controller.signal });
+        const result = await api<TaskList>(`/api/tasks?limit=100&deleted=${deleted}`, { signal: controller.signal });
         if (!controller.signal.aborted) { setItems(result.items); setError(''); }
       } catch (error) { if (!controller.signal.aborted) setError(errorText(error)); }
       finally { if (!controller.signal.aborted) { setLoading(false); timer = setTimeout(() => void refresh(), 2000); } }
     }
     void refresh(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [revision]);
-  const visible = items.filter(task => !status || task.status === status).sort((a, b) => a.id === highlighted ? -1 : b.id === highlighted ? 1 : 0);
-  return <><PageHeading title="正在整理的事" description="任务和已完成阶段保存在本机。关闭程序后未完成的任务，可以在下次打开时继续。"><Link className="button secondary" to="/ai"><Plus size={18} />新建整理任务</Link></PageHeading>
-    <div className="ai-filter-row"><label>任务状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="text-button" onClick={() => setRevision(value => value + 1)}>刷新任务</button><span className="helper">展示最近 100 项任务</span></div>
+  }, [revision, deleted]);
+  function changeView(trash: boolean) {
+    const next = new URLSearchParams(params); next.delete('task');
+    if (trash) next.set('deleted', 'true'); else next.delete('deleted');
+    setParams(next); setStatus(''); setNotice(''); setError('');
+  }
+  function taskChanged(task: TaskItem, action: TaskAction) {
+    if (action === 'trash' || action === 'restore') {
+      setItems(current => current.filter(item => item.id !== task.id));
+      setNotice(action === 'trash' ? '任务已移入回收站，已完成的阶段和草稿会保留。可以在“回收站”中恢复任务。' : '任务已恢复到任务列表。已取消的任务可以手动继续。');
+    } else setNotice('');
+    setRevision(value => value + 1);
+  }
+  const visible = items.filter(task => Boolean(task.deletedAt) === deleted && (!status || task.status === status)).sort((a, b) => a.id === highlighted ? -1 : b.id === highlighted ? 1 : 0);
+  return <><PageHeading title={deleted ? '任务回收站' : '正在整理的事'} description={deleted ? '移入的任务和已完成阶段保存在这里。恢复到任务列表后，可以查看结果或手动继续。' : '任务和已完成阶段保存在本机。关闭程序后未完成的任务，可以在下次打开时继续。'}><Link className="button secondary" to="/ai"><Plus size={18} />新建整理任务</Link></PageHeading>
+    <div className="view-tabs" role="group" aria-label="任务视图"><button className={!deleted ? 'active' : ''} aria-pressed={!deleted} onClick={() => changeView(false)}><ListChecks size={20} />任务列表</button><button className={deleted ? 'active' : ''} aria-pressed={deleted} onClick={() => changeView(true)}><Trash2 size={20} />回收站</button></div>
+    <div className="ai-filter-row"><label>任务状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="">全部状态</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="text-button" onClick={() => setRevision(value => value + 1)}>刷新任务</button><span className="helper">{deleted ? '展示最近移入的 100 项任务' : '展示最近 100 项任务'}</span></div>
+    {notice && <StatusNotice>{notice}</StatusNotice>}
     <ErrorNotice message={error} retry={() => setRevision(value => value + 1)} />
-    {loading ? <Loading label="正在读取任务…" /> : visible.length ? <div className="ai-task-list">{visible.map(task => <TaskCard key={task.id} task={task} highlighted={task.id === highlighted} reload={() => setRevision(value => value + 1)} />)}</div> : <EmptyState title={status ? '暂时没有这个状态的任务' : '这里还没有任务'} description="导出年册、整理文字或生成小报后，可以在这里查看进度。" action={<Link to="/yearbooks" className="button secondary">去看看年册<BookOpen size={17} /></Link>} />}
+    {loading ? <Loading label="正在读取任务…" /> : visible.length ? <div className="ai-task-list">{visible.map(task => <TaskCard key={task.id} task={task} highlighted={task.id === highlighted} reload={action => taskChanged(task, action)} />)}</div> : !error && <EmptyState title={status ? '暂时没有这个状态的任务' : deleted ? '任务回收站是空的' : '这里还没有任务'} description={status ? '选择“全部状态”，查看当前列表中的其他任务。' : deleted ? '移入回收站的任务会出现在这里，可以随时恢复。' : '导出年册、整理文字或生成小报后，可以在这里查看进度。'} action={status ? <button className="button secondary" onClick={() => setStatus('')}>查看全部状态</button> : deleted ? <button className="button secondary" onClick={() => changeView(false)}>返回任务列表<ArrowRight size={17} /></button> : <Link to="/yearbooks" className="button secondary">去看看年册<BookOpen size={17} /></Link>} />}
   </>;
 }
 

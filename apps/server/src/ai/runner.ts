@@ -78,7 +78,7 @@ export class AiRunner {
   private check(id: string, runtime: Runtime) {
     if (!this.current(id, runtime) || runtime.controller.signal.aborted) throw runtime.controller.signal.reason ?? new AppError(409, 'AI_TASK_CANCELLED', '任务已中止');
     const task = getTask(this.store, id);
-    if (task.status === 'cancelled' || task.cancelRequested) throw new AppError(409, 'AI_TASK_CANCELLED', '任务已取消');
+    if (task.deletedAt || task.status === 'cancelled' || task.cancelRequested) throw new AppError(409, 'AI_TASK_CANCELLED', '任务已取消');
     return task;
   }
   private async write<T>(id: string, runtime: Runtime, operation: () => T): Promise<T> {
@@ -102,6 +102,7 @@ export class AiRunner {
       this.activeEpoch(epoch);
       return { task: getTask(this.store, id), active: this.running.get(id) };
     });
+    if (current.deletedAt) throw new AppError(409, 'TASK_IN_TRASH', '任务已移入回收站，请先恢复再重试');
     if (!['failed', 'cancelled'].includes(current.status)) throw new AppError(409, 'TASK_NOT_RETRYABLE', '只有失败或已取消的任务可以重试');
     if (active) { active.controller.abort(new AppError(409, 'AI_ATTEMPT_REPLACED', '正在结束上一次执行')); await active.promise; }
     this.activeEpoch(epoch);
@@ -121,7 +122,7 @@ export class AiRunner {
       const now = new Date().toISOString();
       this.store.db.prepare(`UPDATE tasks SET status = 'failed', message = '应用重启，任务未完成',
         error_message = '应用关闭时此任务尚未完成。已完成的分月阶段已保留，点击重试可继续。', finished_at = ?, updated_at = ?
-        WHERE kind = 'ai' AND status IN ('pending', 'running')`).run(now, now);
+        WHERE kind = 'ai' AND deleted_at IS NULL AND status IN ('pending', 'running')`).run(now, now);
     });
   }
   pause(): Promise<void> {

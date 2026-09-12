@@ -11,6 +11,7 @@ export const MIGRATIONS = [
   { version: 3, filename: '003_models.sql' },
   { version: 4, filename: '004_ai.sql' },
   { version: 5, filename: '005_letters.sql' },
+  { version: 6, filename: '006_task_trash.sql' },
 ].map(migration => {
   const sql = readFileSync(new URL(`../migrations/${migration.filename}`, import.meta.url), 'utf8');
   return { ...migration, sql, checksum: createHash('sha256').update(sql).digest('hex') };

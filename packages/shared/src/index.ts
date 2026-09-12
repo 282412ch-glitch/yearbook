@@ -107,4 +107,5 @@ export type YearbookList = { items: YearbookItem[]; total: number };
 export type YearbookVersion = { id: string; yearbookId: string; versionNo: number; source: 'manual' | 'ai'; label: string; snapshot: YearbookInput; createdAt: string };
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type TaskKind = 'yearbook-html' | 'yearbook-pdf' | 'ai' | string;
-export type TaskItem = { id: string; kind: TaskKind; yearbookId: string | null; status: TaskStatus; progress: number; message: string; result: unknown; outputPath: string | null; errorMessage: string | null; maxDurationMs: number; toolCalls: number; cancelRequested: boolean; attempts: number; createdAt: string; startedAt: string | null; finishedAt: string | null; updatedAt: string };
+export type TaskItem = { id: string; kind: TaskKind; yearbookId: string | null; status: TaskStatus; progress: number; message: string; result: unknown; outputPath: string | null; errorMessage: string | null; maxDurationMs: number; toolCalls: number; cancelRequested: boolean; attempts: number; createdAt: string; startedAt: string | null; finishedAt: string | null; updatedAt: string; deletedAt: string | null };
+export type TaskList = { items: TaskItem[]; total: number };

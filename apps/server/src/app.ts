@@ -13,7 +13,7 @@ import { addReflection, calendar, deleteRecord, getRecord, listRecords, memories
 import { importMedia, MAX_PHOTO_BYTES, readMedia } from './media.js';
 import { createBackup, listBackups, MAX_BACKUP_BYTES, restoreBackup } from './backups.js';
 import { applyYearbookVersion, createYearbookVersion, deleteYearbook, getYearbook, getYearbookVersion, listYearbookVersions, listYearbooks, renderYearbookHtml, saveYearbook } from './yearbooks.js';
-import { cancelTask, getTask, listTasks, retryTask, recoverInterruptedTasks } from './tasks.js';
+import { getTask, listTasks, recoverInterruptedTasks, restoreTask, trashTask } from './tasks.js';
 import { cancelExport, pauseExports, readExport, requestExport, resumeExports, retryExport } from './exports.js';
 import { ModelService } from './models/service.js';
 import { CredentialVault } from './models/credentials.js';
@@ -180,7 +180,20 @@ export async function createApp(options: { dataDir: string; webDist?: string; cr
     return reply.code(202).send(task);
   });
   app.get<{ Params: { id: string } }>('/api/tasks/:id', async request => store.write(() => getTask(store, request.params.id)));
-  app.get<{ Querystring: { status?: string; yearbookId?: string; limit?: string; offset?: string } }>('/api/tasks', async request => store.write(() => listTasks(store, request.query)));
+  app.get<{ Querystring: { status?: string; yearbookId?: string; deleted?: string; limit?: string; offset?: string } }>('/api/tasks', async request => store.write(() => listTasks(store, request.query)));
+  app.delete<{ Params: { id: string } }>('/api/tasks/:id', async request => {
+    const task = await store.write(() => { requireCurrentLibrary(request); return trashTask(store, request.params.id); });
+    if (task.cancelRequested) {
+      requireCurrentLibrary(request);
+      if (task.kind === 'ai') await ai.cancel(task.id);
+      else await cancelExport(store, task.id);
+    }
+    return store.write(() => { requireCurrentLibrary(request); return getTask(store, task.id); });
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/restore', async request => store.write(() => {
+    requireCurrentLibrary(request);
+    return restoreTask(store, request.params.id);
+  }));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/cancel', async request => {
     const task = await store.write(() => getTask(store, request.params.id));
     requireCurrentLibrary(request);

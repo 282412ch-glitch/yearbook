@@ -9,7 +9,7 @@ type TaskRow = {
   id: string; kind: string; yearbook_id: string | null; status: TaskStatus; progress: number; message: string;
   result_json: string | null; output_path: string | null; error_message: string | null; max_duration_ms: number;
   tool_calls: number; cancel_requested: number; attempts: number; idempotency_key: string | null;
-  created_at: string; started_at: string | null; finished_at: string | null; updated_at: string;
+  created_at: string; started_at: string | null; finished_at: string | null; updated_at: string; deleted_at: string | null;
 };
 
 function parseJson(value: string | null): unknown {
@@ -22,7 +22,7 @@ export function presentTask(row: TaskRow): TaskItem {
     id: row.id, kind: row.kind as TaskKind, yearbookId: row.yearbook_id, status: row.status,
     progress: row.progress, message: row.message, result: parseJson(row.result_json), outputPath: row.output_path,
     errorMessage: row.error_message, maxDurationMs: row.max_duration_ms, toolCalls: row.tool_calls, cancelRequested: !!row.cancel_requested,
-    attempts: row.attempts, createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, updatedAt: row.updated_at,
+    attempts: row.attempts, createdAt: row.created_at, startedAt: row.started_at, finishedAt: row.finished_at, updatedAt: row.updated_at, deletedAt: row.deleted_at,
   };
 }
 
@@ -59,18 +59,20 @@ export function getTask(store: DataStore, rawId: string): TaskItem {
   return presentTask(row);
 }
 
-export function listTasks(store: DataStore, raw: { status?: string; yearbookId?: string; limit?: string; offset?: string } = {}) {
+export function listTasks(store: DataStore, raw: { status?: string; yearbookId?: string; deleted?: string; limit?: string; offset?: string } = {}) {
   const query = z.object({
     status: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']).optional(),
+    deleted: z.enum(['true', 'false']).default('false'),
     yearbookId: idSchema.optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0),
   }).parse(raw);
-  const clauses: string[] = [];
+  const clauses = [query.deleted === 'true' ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
   const values: (string | number)[] = [];
   if (query.status) { clauses.push('status = ?'); values.push(query.status); }
   if (query.yearbookId) { clauses.push('yearbook_id = ?'); values.push(query.yearbookId); }
-  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const where = ` WHERE ${clauses.join(' AND ')}`;
   const total = (store.db.prepare(`SELECT COUNT(*) AS count FROM tasks${where}`).get(...values) as { count: number }).count;
-  const rows = store.db.prepare(`SELECT * FROM tasks${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`).all(...values, query.limit, query.offset) as TaskRow[];
+  const order = query.deleted === 'true' ? 'deleted_at DESC, created_at DESC, id DESC' : 'created_at DESC, id DESC';
+  const rows = store.db.prepare(`SELECT * FROM tasks${where} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...values, query.limit, query.offset) as TaskRow[];
   return { total, items: rows.map(presentTask) };
 }
 
@@ -105,8 +107,29 @@ export function cancelTask(store: DataStore, rawId: string) {
   return updateTask(store, task.id, { status: 'cancelled', progress: task.progress, message: '任务已取消', cancelRequested: true });
 }
 
+/** Stop queued/running work before hiding it; the caller also aborts its runtime. */
+export function trashTask(store: DataStore, rawId: string) {
+  return store.db.transaction(() => {
+    const task = getTask(store, rawId);
+    if (task.deletedAt) return task;
+    cancelTask(store, task.id);
+    const now = new Date().toISOString();
+    // Release the request key so a new submission cannot reuse a trashed task.
+    store.db.prepare('UPDATE tasks SET deleted_at = ?, updated_at = ?, idempotency_key = NULL WHERE id = ?').run(now, now, task.id);
+    return getTask(store, task.id);
+  })();
+}
+
+export function restoreTask(store: DataStore, rawId: string) {
+  const task = getTask(store, rawId);
+  if (!task.deletedAt) return task;
+  store.db.prepare('UPDATE tasks SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(new Date().toISOString(), task.id);
+  return getTask(store, task.id);
+}
+
 export function retryTask(store: DataStore, rawId: string) {
   const task = getTask(store, rawId);
+  if (task.deletedAt) throw new AppError(409, 'TASK_IN_TRASH', '任务已移入回收站，请先恢复再重试');
   if (!['failed', 'cancelled'].includes(task.status)) throw new AppError(409, 'TASK_NOT_RETRYABLE', '只有失败或已取消的任务可以重试');
   const now = new Date().toISOString();
   store.db.prepare(`UPDATE tasks SET status = 'pending', progress = 0, message = '等待重试', result_json = NULL,
@@ -116,6 +139,7 @@ export function retryTask(store: DataStore, rawId: string) {
 
 export function startTask(store: DataStore, rawId: string, message = '正在准备') {
   const task = getTask(store, rawId);
+  if (task.deletedAt) throw new AppError(409, 'TASK_IN_TRASH', '任务已移入回收站，请先恢复再重试');
   if (task.status === 'cancelled') throw new AppError(409, 'TASK_CANCELLED', '任务已取消');
   if (task.status === 'completed') return task;
   return updateTask(store, task.id, { status: 'running', progress: Math.max(1, task.progress), message, attempts: task.attempts + 1 });
@@ -123,18 +147,18 @@ export function startTask(store: DataStore, rawId: string, message = '正在准�
 
 export function finishTask(store: DataStore, rawId: string, result: unknown, outputPath: string | null, message = '已完成') {
   const current = getTask(store, rawId);
-  if (current.status === 'cancelled' || current.cancelRequested) return current;
+  if (current.deletedAt || current.status === 'cancelled' || current.cancelRequested) return current;
   return updateTask(store, rawId, { status: 'completed', progress: 100, message, result, outputPath, errorMessage: null });
 }
 
 export function failTask(store: DataStore, rawId: string, errorMessage: string) {
   const current = getTask(store, rawId);
-  if (current.status === 'cancelled' || current.cancelRequested) return current;
+  if (current.deletedAt || current.status === 'cancelled' || current.cancelRequested) return current;
   return updateTask(store, rawId, { status: 'failed', message: '任务失败', errorMessage: errorMessage.slice(0, 2000) });
 }
 
 /** A process can stop while an export is running; make that visible after restart. */
 export function recoverInterruptedTasks(store: DataStore) {
   const now = new Date().toISOString();
-  store.db.prepare(`UPDATE tasks SET status = 'failed', message = '应用重启，任务未完成', error_message = '应用关闭时任务尚未完成，可重试', finished_at = ?, updated_at = ? WHERE status IN ('pending', 'running')`).run(now, now);
+  store.db.prepare(`UPDATE tasks SET status = 'failed', message = '应用重启，任务未完成', error_message = '应用关闭时任务尚未完成，可重试', finished_at = ?, updated_at = ? WHERE deleted_at IS NULL AND status IN ('pending', 'running')`).run(now, now);
 }

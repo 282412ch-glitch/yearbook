@@ -41,8 +41,12 @@
 | POST | `/api/yearbooks/:id/versions/:versionId/apply` | 将版本快照作为新手动版本采用 |
 | POST | `/api/yearbooks/:id/export` | `{format:'html'|'pdf', idempotencyKey?}`，返回 202 `TaskItem` |
 | GET | `/api/yearbooks/:id/export/:format?taskId=...` | 任务完成后下载 ZIP/PDF，否则返回 202 任务 |
-| GET | `/api/tasks` / `/api/tasks/:id` | 查询导出及后台任务 |
+| GET | `/api/tasks` / `/api/tasks/:id` | 查询导出及后台任务；列表默认排除回收站，`deleted=true` 只查回收站，支持 status/yearbookId/limit/offset |
 | POST | `/api/tasks/:id/cancel` / `/retry` | 取消或重试失败/取消任务 |
+| DELETE | `/api/tasks/:id` | 移入任务回收站，返回含 `deletedAt` 的 `TaskItem`；等待中或运行中的任务先取消并中止执行 |
+| POST | `/api/tasks/:id/restore` | 恢复到任务列表，保留状态、进度和结果，不自动执行；回收站中的任务须恢复后才能重试 |
+
+任务移入与恢复均为幂等操作。移入时保留 AI 阶段、草稿、来源和导出文件，并释放请求幂等键，让新提交可创建新任务；恢复不会重新占用旧请求键。回收站状态随资料库保存和备份。
 
 年册章节包含 `kind/title/body/position`，块类型支持 `paragraph`、`image`、`quote`、`record`，每个章节保存 `sourceRecordIds`。传入数组顺序决定章节和块的位置，移动时保留 ID/图注/来源；显式 `chapters:[]` 保存空册，不传字段才生成默认章节。保存会创建不可变版本快照，手动编辑不会覆盖旧版本。
 
