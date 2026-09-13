@@ -1,4 +1,4 @@
-# 本地接口契约
+# 本地接口文档
 
 共享类型在 `packages/shared/src/index.ts`。JSON 无额外 data 包装，错误 `{error:{code,message,details?}}`。
 
@@ -26,7 +26,7 @@
 
 备份和恢复时互斥写入。备份是数据库一致性快照+原图+派生图+哈希/版本清单；恢复校验迁移版本、数据库完整性、外键和媒体引用，先保留恢复前备份，失败可回滚。ZIP 不得越界、包含密钥或嵌套历史备份。
 
-## 节点二：年册与导出
+## 年册与导出
 
 | 方法 | 地址 | 响应/用途 |
 |---|---|---|
@@ -52,7 +52,7 @@
 
 HTML ZIP 的 `index.html` 内嵌所需 Noto 中文字体与全部图片，并附 OFL 许可证、导出版本清单与说明。PDF 任务使用独立 Chromium CDP，在禁网且字体/图片就绪后打印；任务结果包含实际浏览器、字节数、载入字体片段数、图片数、模板及保存时间。没有可用浏览器、资源缺失、超时或取消均为明确状态，下载端不返回未完成产物。
 
-## 节点三：模型、AI 草稿与任务
+## 模型、AI 草稿与任务
 
 | 方法 | 地址 | 响应/用途 |
 |---|---|---|
@@ -76,7 +76,11 @@ HTML ZIP 的 `index.html` 内嵌所需 Noto 中文字体与全部图片，并附
 
 模型详情使用 `ModelProfile`，数据库凭据引用不对前端暴露。恢复备份后凭据引用清空、四项能力重置，需重新配置。服务只给出固定中文错误，不回显上游敏感信息。恢复期间开始的写入返回 503；跨越恢复周期的迟到请求返回 409 `LIBRARY_RESTORED`。
 
-协议与运行器接口见 [STAGE75_CONTRACT.md](STAGE75_CONTRACT.md)，用户配置流程见 [AI_CONFIGURATION.md](AI_CONFIGURATION.md)。
+模型配置的协议字段为 `responses` / `chat-completions`，包括 `name`、`baseUrl`、`model`、`timeoutMs`、`maxOutputTokens`、`streamEnabled`。能力为 `text`、`vision`、`tools`、`streaming`，状态为 `unknown`、`supported`、`unsupported`、`error`，分别保存检查时间；凭据模式为 `windows` / `session` / `none`。配置流程见 [AI 配置](AI_CONFIGURATION.md)。
+
+协议服务与 AI 运行器使用 `ModelRequest/ModelResult` 传递请求和结果。`ModelRequest.expectedProfileUpdatedAt` 用于保护配置版本，不发送给模型；可信用量通过 `ModelResult.usage` 或失败时的 `ModelError.usage` 传给任务累积器。
+
+`scopeRecordIds` 表示本次任务的完整授权范围，`sourceRecordIds` 表示草稿实际引用的记录范围，来源校验与备份恢复需分别处理。
 
 ## 未来信
 

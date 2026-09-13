@@ -15,7 +15,7 @@
 | `models/` | 凭据保管、配置与能力验证、独立 Responses/Chat 适配器、有界 HTTP/SSE |
 | `ai/` | 授权素材快照、项目工具、提示词、阶段任务、草稿版本与采用 |
 | `backups.ts`、`backup-validation.ts` | 快照、清单、结构/关联校验、旧版本升级、恢复与回滚 |
-| `scripts` | Windows 启停、开发模式、Tabbit 实际浏览器验收 |
+| `scripts` | Windows 启停、开发模式、浏览器端到端测试 |
 
 前端字体随 npm 依赖构建到本地，图标为 SVG，不依赖 CDN。生产由同一个 Fastify 服务提供前端和 API，仅监听 127.0.0.1。开发模式由本机 Vite 代理 API。
 
@@ -29,6 +29,12 @@
 
 年册树为“年册 → 章节 → 内容块”，内容块包括段落、原话、照片、记录卡片；独立关系表保留来源记录。同年可建多本年册，保存和采用版本都保留快照。AI 草稿与原记录、年册编辑稿分别保存。
 
+## 外观与阅读界面
+
+外观设置由 `Appearance.tsx`、`appearance-store.ts` 管理，样式位于 `tokens.css`、`appearance.css`、`polish.css`。壁纸保存在当前站点的 IndexedDB，参数保存在 localStorage，不进入资料库备份。毛玻璃窗景与外观保存交互参考 [dsh-frosted-window](https://github.com/SenryLee/dsh-frosted-window#readme)。
+
+年册阅读器位于 `YearbookReader.tsx`、`reader.css`，提供章节目录、缩放、专注阅读和阅读进度。导出共用 `yearbook-template.ts` 与 `yearbook-print-style.ts`；界面主题、壁纸和预览缩放不影响导出文件。
+
 ## 数据迁移
 
 | 版本 | 实体 |
@@ -38,9 +44,10 @@
 | 003 | model_profiles（配置与随机凭据引用，不含密钥） |
 | 004 | AI 素材范围、来源快照、任务阶段、草稿、来源关联、草稿版本 |
 | 005 | future_letters、future_letter_media；查看日期、封存/首次阅读、软删除、有序照片关系 |
+| 006 | tasks.deleted_at 与回收站查询索引 |
 | schema_migrations | 版本、文件名、SHA256 和应用时间 |
 
-启动校验迁移顺序和校验和，在事务中只执行缺失迁移；拒绝缺号、不匹配或更高版本。迁移 SQL 不应改写，换行由 `.gitattributes` 固定 LF。最终阶段仅追加 005，001–004 的字节和校验和保留。
+启动校验迁移顺序和校验和，在事务中只执行缺失迁移；拒绝缺号、不匹配或更高版本。已发布的迁移 SQL 不应改写，结构变更通过追加迁移完成；换行由 `.gitattributes` 固定 LF。
 
 ## 未来信
 
@@ -91,4 +98,4 @@ PDF 使用 Node 24 原生 WebSocket 与独立 Chromium 的 CDP 会话；仅监�
 5. 暂停任务并保存恢复前 ZIP，写入恢复事务标记，将原库/媒体移到 rollback，再切换已验证文件。
 6. 成功后清除标记；失败恢复原文件。程序中途退出，下次启动先保守回滚。旧版本备份和中文/空格新目录恢复均有独立测试。
 
-每个自动化测试使用自己的临时 DataStore。Windows 启动器只通过随机实例令牌停止自己启动的服务，不按程序名批量终止进程。所有正式 data、运行日志、凭据与生成物排除在 Git 之外。
+每个自动化测试使用自己的临时 DataStore。Windows 启动器只通过随机实例令牌停止自己启动的服务，不按程序名批量终止进程。`data`、运行日志、凭据与生成物排除在 Git 之外。

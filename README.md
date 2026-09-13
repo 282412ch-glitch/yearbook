@@ -2,22 +2,19 @@
 
 在 Windows 本机记录文字与照片，通过浏览器回顾生活。
 
-已实现记录与照片、时间轴/月历、中文搜索、回顾补记、生活第一次、记忆盲盒、给未来的信、备份恢复，以及可完全手动编辑的年册。HTML 和 PDF 使用同一份保存稿与排版，字体、照片均可离线阅读。可选的 AI 助理支持双协议模型配置、单条整理、月报、Agent 和分月编册，生成内容保留来源与版本。
+支持文字与照片记录、时间轴/月历、中文搜索、回顾补记、生活第一次、记忆盲盒、给未来的信、备份恢复，以及可完全手动编辑的年册。HTML 和 PDF 使用同一份保存稿与排版，字体、照片均可离线阅读。可选的 AI 助理支持双协议模型配置、单条整理、月报、Agent 和分月编册，生成内容保留来源与版本。
 
 ![一年一册首页：记录日常、翻阅记忆与继续编辑年册](img/微信图片_20260913175303_1055_11.png)
 
 *首页展示，使用自定义壁纸与毛玻璃窗景。*
 
-实际验证结果与边界见 [验收记录](docs/ACCEPTANCE.md)。Codego 真实标题请求已成功；完整真实 Agent/年册质量尚未验收，AnyRouter 生成仍被网关拒绝，详见 [模型诊断](docs/MODEL_TROUBLESHOOTING.md)。阶段记录见 [实施计划](docs/PLAN.md)，后续维护阅读 [HANDOFF](docs/HANDOFF.md)。
-
 ## 安装与运行
 
-要求 **Node.js 24 LTS，24.14.1 或更高的 24.x**。当前环境验证 24.14.1、npm 11.17.0，提交 `package-lock.json`。
+要求 **Node.js 24 LTS，24.14.1 或更高的 24.x**。
 
-在 PowerShell 中运行（当前实际 Git 仓库）：
+下载项目后，在项目目录打开 PowerShell 并运行：
 
 ```powershell
-Set-Location -LiteralPath 'D:\项目文件夹\yearbook'
 npm ci
 npm run build
 npm start
@@ -28,15 +25,6 @@ npm start
 日常使用可以在首次构建后双击 `Start-Yearbook.cmd`：等待服务就绪、打开默认浏览器。重复启动会复用已运行的实例。关闭启动窗口不停止服务；双击 `Stop-Yearbook.cmd` 或运行 `npm run stop` 停止。停止器只通过随机令牌认证停止自己创建的服务，不按进程名批量结束 Node。
 
 在终端运行 `npm start` 或 `npm run dev` 时，在原终端按 `Ctrl+C` 关闭。开发模式使用 Vite 热更新前端，后端改动需重启命令。停止启动器不会关闭另一个终端手动运行的服务。
-
-```powershell
-npm run dev
-npm run typecheck
-npm test
-npm run test:e2e
-```
-
-`test:e2e` 使用安装的 Tabbit 浏览器及官方本地自动化入口，独立临时数据目录；若浏览器入口不可用会明确失败，不把跳过视为通过。详见 [验收记录](docs/ACCEPTANCE.md)。
 
 ## 窗景与外观
 
@@ -84,11 +72,11 @@ npm start
 
 同一数据目录一次只允许一个服务进程。不要同时用两个启动方式打开同一目录。浏览器未提交表单会尽量存入本机 localStorage；清除浏览器站点数据会删除这些草稿，已保存的记录不受影响。
 
-仓库中的 `img` 存放用户提供的标志素材与 README 界面截图，未混入记录。应用不会自动生成演示记录。所有测试生成的内容与正式 `data` 隔离。
+`img` 存放项目标志与文档截图，不属于记录资料。应用不会自动生成演示记录。
 
 ## AI 整理与手工编册
 
-“设置与备份”可以配置 Responses 或 Chat Completions 兼容服务，分别验证文本、图片、工具及流式能力。Key 优先存 Windows 系统凭据；不可用时可选择仅本次服务会话使用。不要把 Key 写到项目文件或对话中。详细地址示例、协议限制和错误说明见 [AI 配置](docs/AI_CONFIGURATION.md)。
+“设置与备份”可以配置 Responses 或 Chat Completions 兼容服务，分别验证文本、图片、工具及流式能力。Key 优先存 Windows 系统凭据；不可用时可选择仅本次服务会话使用。API Key 仅在应用设置页填写。详细地址示例、协议限制和错误说明见 [AI 配置](docs/AI_CONFIGURATION.md)。
 
 记录详情可建议标题、整理文字或提出补充问题；“月末小报”和年册编辑页可整理选定素材。AI 内容保存为独立草稿，生成不会改动原记录；用户编辑、采用后才进入记录编辑页或年册。重新生成保留旧稿，采用整册前保留原年册版本。没有工具能力时退回程序筛选素材的固定流程，图片能力缺失时使用用户图注。进度、来源、实际用量、取消与继续/重试都在任务/草稿页查看。
 
@@ -120,17 +108,26 @@ npm start
 
 信件独立于普通记录，时间轴、盲盒和 AI 工具不会检索它。只属于未到期信件的照片也受读取限制；已被其他记录或年册引用的共享照片仍可使用。封存是应用内的查看日期限制，数据库和备份仍保存原文，应像其他个人资料一样保管本机文件与备份。
 
-## 开发与复核
+## 开发与测试
 
-统一脚本为 `npm run dev`、`npm run build`、`npm start`、`npm run typecheck`、`npm test`、`npm run test:e2e`。自动化只使用独立资料目录。E2E 需要本机 Tabbit；PDF 相关测试在本机有 Chrome/Edge 时实际打印，其他机器若缺浏览器会明确报告相应边界。
+在项目目录运行：
 
-`node scripts/verify-runtime.mjs` 在完整中文空格临时项目路径内构建并验证 Windows 启停；`--use-existing-build` 可验收当前构建。`npx tsx tests/export-evidence.ts` 生成明确标记的排版测试资料、两套 HTML/PDF，放在被 Git 忽略的 `test-results` 中。应用运行不需要 Python，PDF 渲染检查工具只在开发验收时使用。
+```powershell
+npm run dev
+npm run typecheck
+npm test
+npm run test:e2e
+```
+
+`npm run dev` 启动开发服务，`npm run typecheck` 检查类型，`npm test` 运行自动化测试。`npm run test:e2e` 需要本机安装 Tabbit；PDF 相关测试需要 Chrome 或 Edge。测试使用独立的临时资料目录，模型测试使用本机模拟服务。
+
+`node scripts/verify-runtime.mjs` 用于验证 Windows 启停、端口冲突及中文空格路径，`--use-existing-build` 可复用当前构建。`npx tsx tests/export-evidence.ts` 生成排版测试用年册及 HTML/PDF，输出位于 `test-results`。
 
 ## 故障处理
 
 - 启动器错误查看 `.runtime/server.log`。首次运行找不到构建，请执行 `npm ci`、`npm run build`。
 - 模型生成失败查看“任务与生成进度”，已完成阶段会保留；检查配置后继续/重试。取消会中断请求。关闭服务后未完成任务在下次启动标为可重试，不自动发送资料。
-- 模型能力以逐项验证结果为准。自动化使用本机模拟服务；Codego 真实标题请求已成功，但此前两次失败无法从旧提示确定具体根因；AnyRouter 生成仍返回 `invalid codex request`。HTTP 200 中的生成失败与连接拒绝已区分，完整真实编册质量仍需验收，见 [排查记录](docs/MODEL_TROUBLESHOOTING.md)。
+- 模型连接或生成失败时，检查服务地址、协议、模型名和密钥，并在“设置与备份”逐项验证能力。部分兼容服务只开放指定客户端，需确认服务支持第三方应用调用。
 - 若意外断电留下无法读取的 `.runtime/launcher.lock`，确认所有启动窗口已关闭后删除这个锁文件即可；不要删除 `data`。`data/.instance-lock` 在旧进程已退出且信息有效时会自动回收，若损坏应先确认应用已停止再检查。
 
-其他说明：[架构](docs/ARCHITECTURE.md) · [接口契约](docs/CONTRACT.md) · [AI 配置状态](docs/AI_CONFIGURATION.md) · [验收](docs/ACCEPTANCE.md)。
+其他说明：[架构](docs/ARCHITECTURE.md) · [接口文档](docs/CONTRACT.md) · [AI 配置](docs/AI_CONFIGURATION.md)。

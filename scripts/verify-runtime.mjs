@@ -334,7 +334,7 @@ try {
     await sentinelAlive();
     return { startExitCode: started.result.code, stopExitCode: stopped.result.code, repeatedStopExitCode: repeat.result.code,
       url: service.url, pid: service.pid, startOutput, stopOutput, repeatedStopOutput: repeatOutput, frontend,
-      browserOpening: 'Start-Yearbook.cmd 使用应用原有默认浏览器打开命令；页面视觉检查由主线浏览器验收负责' };
+      browserOpening: 'Start-Yearbook.cmd 使用应用原有默认浏览器打开命令；页面视觉检查由浏览器端到端测试负责' };
   });
   await step('停止最后一个自有对照服务，无关端口仍工作', async () => {
     await stopOwned(guard.state); await sentinelAlive();
