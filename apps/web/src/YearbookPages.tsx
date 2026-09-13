@@ -34,6 +34,7 @@ import { yearbookInputSchema } from '@yearbook/shared';
 import { api, errorText, readableDate, readableTime, useResource } from './api';
 import { EmptyState, ErrorNotice, Loading, PageHeading, StatusNotice } from './components';
 import { appendYearbookPhotos, moveYearbookItem, parseYearbookDraft, withYearbookDraftIds } from './yearbook-ordering';
+import { YearbookReader } from './YearbookReader';
 import './yearbook.css';
 
 type Draft = YearbookInput;
@@ -208,7 +209,7 @@ export function YearbookListPage() {
     {message && <StatusNotice>{message}</StatusNotice>}
     {books.loading ? <Loading label="正在读取年册…" /> : books.data?.items.length ? <div className="yearbook-list">
       {books.data.items.map(book => <article className="yearbook-card" key={book.id}>
-        <div className={`yearbook-card-mark template-${book.template}`} aria-hidden="true"><BookOpen size={34} strokeWidth={1.25} /><span>{book.year}</span></div>
+        <Link to={`/yearbooks/${book.id}/preview`} className={`yearbook-card-stage template-${book.template}`} tabIndex={-1} aria-hidden="true"><span className="yearbook-card-jacket"><span className="book-jacket-label">生活的年度存档</span><span className="book-jacket-year">{book.year}</span><span className="book-jacket-title">{book.title || `${book.year} 年册`}</span>{book.coverMediaId ? <img src={`/api/media/${book.coverMediaId}/thumbnail`} alt="" loading="lazy" /> : <span className="book-jacket-rule" />}<span className="book-jacket-imprint">一年一册</span></span></Link>
         <div className="yearbook-card-content"><div className="yearbook-card-meta"><span>{book.year} 年</span><span>{templateLabel(book.template)}</span><span>更新于 {readableTime(book.updatedAt)}</span></div><h2>{book.title || `${book.year} 年册`}</h2><p>{book.chapters.length ? `${book.chapters.length} 个章节` : '还没有章节，打开后开始编辑。'}</p><div className="inline-actions"><Link to={`/yearbooks/${book.id}/edit`} className="button secondary"><BookOpen size={16} />继续编辑</Link><Link to={`/yearbooks/${book.id}/preview`} className="text-link"><ExternalLink size={16} />预览</Link><button type="button" className="text-button danger-text" disabled={busy === book.id} onClick={() => void remove(book)}><Trash2 size={16} />移入回收站</button></div></div>
       </article>)}
     </div> : !books.error && <EmptyState title="还没有年册" description="从一个年份开始，选几条想留下的记录，慢慢做成一本。" action={<Link to="/yearbooks/new" className="button primary"><Plus size={18} />新建第一本</Link>} />}
@@ -745,10 +746,6 @@ function YearbookPreview({ id }: { id?: string }) {
     {hasLocalDraft && <div className="notice" role="status"><span>还有未保存的编辑，当前显示的是上次保存的年册。</span><Link className="text-link" to={`/yearbooks/${id}/edit`}>返回编辑，保存并预览</Link></div>}
     <div className="yearbook-preview-note section-title"><p className="helper">保存于 {readableTime(book.data.updatedAt)}。预览与导出使用相同排版，打印时会自动分页。</p><a className="text-link" href={route} target="_blank" rel="noreferrer"><ExternalLink size={16} />单独打开排版</a></div>
     {!book.data.chapters.length && <p className="helper yearbook-preview-note">这本年册目前只有封面，可以返回编辑添加章节。</p>}
-    <section className="yearbook-preview-shell" aria-label="年册排版预览" aria-busy={previewPhase === 'checking' || previewPhase === 'loading'}>
-      {(previewPhase === 'checking' || previewPhase === 'loading') && <Loading label="正在准备排版与照片…" />}
-      {previewError && <ErrorNotice message={previewError} retry={() => setRevision(value => value + 1)} />}
-      {previewUrl && <iframe ref={frame} key={previewUrl} className={`yearbook-preview-frame${previewPhase === 'ready' ? '' : ' is-loading'}`} title={`${book.data.title || `${book.data.year} 年册`}排版预览`} src={previewUrl} sandbox="allow-same-origin allow-modals" referrerPolicy="no-referrer" onLoad={onFrameLoad} onError={() => { setPreviewError('预览连接中断，请重新载入。'); setPreviewPhase('failed'); }} />}
-    </section>
+    <YearbookReader frame={frame} src={previewUrl} title={book.data.title || `${book.data.year} 年册`} phase={previewPhase} error={previewError} onRetry={() => setRevision(value => value + 1)} onLoad={onFrameLoad} onError={() => { setPreviewError('预览连接中断，请重新载入。'); setPreviewPhase('failed'); }} />
   </>;
 }

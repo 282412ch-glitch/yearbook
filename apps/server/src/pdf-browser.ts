@@ -215,7 +215,7 @@ export async function printYearbookPdf(htmlPath: string, pdfPath: string, profil
     await progress(66, '正在载入离线中文字体与照片');
     const assets = await readyDocument(cdp, sessionId, htmlPath, signal);
     await progress(78, '字体和照片已就绪，正在排版 A4 页面');
-    const printed = await cdp.command('Page.printToPDF', { printBackground: true, preferCSSPageSize: true, displayHeaderFooter: false, transferMode: 'ReturnAsStream', generateTaggedPDF: true }, sessionId);
+    const printed = await cdp.command('Page.printToPDF', { printBackground: true, preferCSSPageSize: true, displayHeaderFooter: false, transferMode: 'ReturnAsStream', generateTaggedPDF: true, generateDocumentOutline: true }, sessionId);
     if (typeof printed.stream !== 'string') throw new AppError(409, 'PDF_RESPONSE_INVALID', '浏览器没有返回 PDF 数据，请在任务页重试');
     const file = await open(pdfPath, 'wx');
     try {

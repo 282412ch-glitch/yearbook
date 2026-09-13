@@ -12,6 +12,7 @@ import sharp from 'sharp';
 import { root, checkNode, hash, waitForService, stopService } from './runtime.mjs';
 import { initialise, flows } from './e2e-flows.mjs';
 import { finalFlows } from './e2e-final-flows.mjs';
+import { appearanceFlows } from './e2e-appearance-flows.mjs';
 
 checkNode();
 const serverEntry = resolve(root, 'apps/server/dist/index.js');
@@ -158,7 +159,11 @@ try {
   await step('02-letters-due-after-restart', finalFlows.lettersAfterRestart);
   await capture('02-letters-narrow');
   await step('02-desktop-width', `await page.setViewportSize({width:1440,height:1000}); return {width:1440};`);
+  await step('02-appearance-persistence', appearanceFlows.appearance);
+  await step('02-appearance-modes', appearanceFlows.appearanceModes);
   await step('03-manual-yearbook', flows.yearbook);
+  await step('03-reader-controls', appearanceFlows.reader);
+  await step('03-photo-keyboard', appearanceFlows.photoKeyboard);
   const exported = await step('04-html-export', flows.exportHtml);
   const download = await fetch(new URL(exported.href, service.url));
   assert.ok(download.ok, '离线 HTML ZIP 下载失败');

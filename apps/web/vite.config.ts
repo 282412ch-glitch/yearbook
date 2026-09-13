@@ -10,5 +10,8 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': { target: process.env.YEARBOOK_API_URL || 'http://127.0.0.1:4317', changeOrigin: false } },
   },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist', emptyOutDir: true,
+    rollupOptions: { output: { manualChunks: { framework: ['react', 'react-dom', 'react-router-dom'] } } },
+  },
 });

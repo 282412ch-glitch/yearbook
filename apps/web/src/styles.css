@@ -1,9 +1,5 @@
-/* Hallmark · macrostructure: Ecosystem Index · tone: quiet personal editorial · anchor hue: olive
- * genre: editorial · theme: Almanac · nav: N3 text side rail · footer: Ft2 inline rule
- * audience: one person on their own computer · use: record and revisit ordinary days
- * enrichment: none; existing user-supplied brand mark and genuine record photographs only
- * pre-emit critique: P5 H4 E4 S5 R5 V4 (browser verification delegated to lead)
- */
+/* Shared form, reading and responsive foundations. Window surfaces and the
+ * current visual treatment are applied by polish.css after these rules. */
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
 html { font-size: 16px; background: var(--color-paper); color: var(--color-ink); }

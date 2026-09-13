@@ -1,0 +1,62 @@
+.yearbook-preview-shell.reader-shell { border: 1px solid var(--color-rule); border-radius: 16px; overflow: hidden; background: var(--color-paper-2); box-shadow: var(--shadow-raised); min-height: 420px; }
+.reader-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 10px 15px; background: var(--color-surface); border-bottom: 1px solid var(--color-rule); }
+.reader-toolbar-start, .reader-toolbar-end, .reader-zoom { display: flex; align-items: center; gap: 6px; }
+.reader-toolbar .icon-button { width: 34px; height: 34px; border-radius: 7px; }
+.reader-toolbar-start > span { display: flex; align-items: center; gap: 7px; color: var(--color-muted); font-size: 11px; }
+.reader-toolbar-start > span > svg { display: none; }
+.reader-zoom { padding: 2px; border: 1px solid var(--color-rule); border-radius: 9px; gap: 0; background: var(--color-paper); }
+.reader-zoom select { min-height: 31px; width: 105px; font-size: 11px; padding: 3px 16px 3px 9px; border: 0; background: transparent; text-align: center; }
+.reader-zoom .icon-button { width: 30px; height: 30px; }
+.reader-focus-button { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 5px 9px; font-size: 11px; color: var(--color-secondary); border-radius: 7px; }
+.reader-focus-button:hover { background: var(--color-accent-soft); }
+.reader-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.reader-layout.has-outline { grid-template-columns: 182px minmax(0, 1fr); }
+.reader-outline { padding: 22px 10px; border-right: 1px solid var(--color-rule); background: var(--card-background); overflow-y: auto; max-height: clamp(480px, 75dvh, 960px); scrollbar-width: thin; }
+.reader-outline[hidden] { display: none; }
+.reader-outline-heading { padding: 0 9px 16px; display: flex; align-items: center; justify-content: space-between; gap: 5px; color: var(--color-secondary); font-size: 11px; }
+.reader-outline-heading small { font-size: 9px; color: var(--color-muted); }
+.reader-outline nav { display: grid; gap: 5px; }
+.reader-outline nav button { display: flex; align-items: flex-start; gap: 10px; min-height: 39px; border-radius: 8px; font-size: 11px; text-align: left; color: var(--color-muted); padding: 10px; line-height: 1.7; }
+.reader-outline nav button:hover { background: var(--card-highlight); }
+.reader-outline nav button.is-active { background: var(--color-accent-soft); color: var(--color-accent); }
+.reader-outline nav button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.reader-section-number { flex: 0 0 17px; font-size: 9px; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.reader-section-number svg { margin-top: 1px; }
+.reader-outline > .helper { padding: 10px; font-size: 11px; }
+.reader-canvas { position: relative; min-width: 0; min-height: 480px; }
+.reader-canvas > .loading-state { min-height: 480px; justify-content: center; padding: 25px; font-size: 12px; }
+.reader-canvas > .notice { margin: 24px; }
+.reader-shell .yearbook-preview-frame { height: clamp(480px, 75dvh, 960px); min-height: 480px; background: var(--color-paper-2); }
+.reader-status { min-height: 42px; display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 10px 20px; border-top: 1px solid var(--color-rule); color: var(--color-muted); background: var(--color-surface); font-size: 10px; }
+.reader-status > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reader-status > div { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.reader-status progress { width: 70px; height: 3px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--color-paper-3); }
+.reader-status progress::-webkit-progress-bar { background: var(--color-paper-3); }
+.reader-status progress::-webkit-progress-value { background: var(--color-accent); }
+.reader-status progress::-moz-progress-bar { background: var(--color-accent); }
+.reader-status small { font-size: 9px; }
+[data-reader-focus='true'] .main-shell { backdrop-filter: none; -webkit-backdrop-filter: none; overflow: visible; }
+.reader-shell.is-focused { position: fixed; inset: 12px; z-index: var(--z-modal); display: flex; flex-direction: column; box-shadow: 0 0 0 30px var(--color-paper); }
+.reader-shell.is-focused .reader-layout { flex: 1; min-height: 0; }
+.reader-shell.is-focused .reader-canvas, .reader-shell.is-focused .yearbook-preview-frame { height: 100%; min-height: 0; }
+.reader-shell.is-focused .reader-outline { max-height: 100%; min-height: 0; }
+.reader-shell.is-focused .reader-toolbar, .reader-shell.is-focused .reader-status { flex-shrink: 0; }
+@media (max-width: 69.99rem) {
+  .reader-layout.has-outline { grid-template-columns: minmax(0, 1fr); }
+  .reader-outline { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--color-rule); padding: 12px; }
+  .reader-outline nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 10px; }
+  .reader-outline-heading { padding-bottom: 9px; }
+  .reader-shell.is-focused .reader-layout.has-outline { grid-template-rows: minmax(0, 150px) minmax(0, 1fr); }
+}
+@media (max-width: 39.99rem) {
+  .reader-toolbar { gap: 6px; padding: 9px; }
+  .reader-toolbar-start > span, .reader-reload, .reader-focus-button > span { display: none; }
+  .reader-zoom select { width: 90px; font-size: 10px; }
+  .reader-focus-button { width: 33px; justify-content: center; padding: 5px; }
+  .reader-toolbar-start, .reader-toolbar-end { gap: 0; }
+  .reader-status { padding-inline: 12px; gap: 8px; }
+  .reader-status small { display: none; }
+  .reader-shell.is-focused { inset: 5px; border-radius: 12px; }
+  .reader-outline nav { grid-template-columns: minmax(0, 1fr); }
+}
+@media print { .reader-toolbar, .reader-status, .reader-outline { display: none; } }

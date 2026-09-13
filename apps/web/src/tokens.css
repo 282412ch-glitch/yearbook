@@ -1,23 +1,37 @@
-/* Hallmark · tokens: Almanac adapted for a Chinese personal journal */
+/* Window light, pine ink and the soft white of a bound notebook. */
 :root {
-  color-scheme: only light;
-  --color-paper: oklch(96.5% 0.012 90);
-  --color-surface: oklch(98.4% 0.008 90);
-  --color-paper-2: oklch(93.2% 0.016 95);
-  --color-paper-3: oklch(90% 0.02 95);
-  --color-ink: oklch(27% 0.012 95);
-  --color-secondary: oklch(42% 0.015 95);
-  --color-muted: oklch(48% 0.013 95);
-  --color-rule: oklch(84% 0.019 90);
-  --color-control: oklch(64% 0.02 95);
-  --color-accent: oklch(43% 0.052 121);
-  --color-accent-ink: oklch(98% 0.008 100);
-  --color-accent-soft: oklch(91.4% 0.022 116);
-  --color-focus: oklch(48% 0.1 140);
-  --color-error: oklch(43% 0.12 32);
-  --color-error-bg: oklch(95% 0.02 35);
-  --color-scrim: oklch(15% 0.01 90 / 0.72);
-  --color-shadow: oklch(26% 0.02 90 / 0.06);
+  color-scheme: light;
+  --color-paper: #edf2ee;
+  --color-surface: #fcfdfb;
+  --color-paper-2: #e7eee8;
+  --color-paper-3: #dce6de;
+  --color-ink: #243b32;
+  --color-secondary: #475e53;
+  --color-muted: #607368;
+  --color-rule: #d0dcd2;
+  --color-control: #a5b8aa;
+  --color-accent: #366653;
+  --color-accent-ink: #f7fcf7;
+  --color-accent-soft: #dceae0;
+  --color-focus: #287851;
+  --color-error: #a03c38;
+  --color-error-bg: #faeae7;
+  --color-scrim: rgb(12 28 21 / 0.64);
+  --color-shadow: rgb(33 60 43 / 0.07);
+  --glass-rgb: 247 251 247;
+  --glass-density: 0.78;
+  --glass-blur: 24px;
+  --glass-saturation: 115%;
+  --wallpaper-dim: 0.1;
+  --glass-border: rgb(255 255 255 / 0.68);
+  --glass-background: rgb(var(--glass-rgb) / var(--glass-density));
+  --card-background: rgb(255 255 255 / 0.54);
+  --card-highlight: rgb(255 255 255 / 0.86);
+  --shadow-panel: 0 12px 50px rgb(24 48 36 / 0.055), inset 0 1px 0 rgb(255 255 255 / 0.38);
+  --shadow-raised: 0 8px 24px rgb(24 48 36 / 0.09);
+  --wallpaper-sky: #dce9e5;
+  --wallpaper-hill: #8da998;
+  --wallpaper-near: #52745f;
   --color-transparent: transparent;
   --font-display: 'Noto Serif SC', 'Songti SC', serif;
   --font-body: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
@@ -35,8 +49,9 @@
   --text-lg: 1.25rem;
   --text-xl: 1.5rem;
   --text-display: clamp(1.75rem, 2.4vw, 2.5rem);
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
+  --radius-sm: 0.625rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
   --rule-thin: 1px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
@@ -46,3 +61,39 @@
   --z-sticky: 200;
   --z-modal: 400;
 }
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-paper: #17251f;
+  --color-surface: #22362c;
+  --color-paper-2: #20332a;
+  --color-paper-3: #2e4639;
+  --color-ink: #e5eee6;
+  --color-secondary: #c0d2c5;
+  --color-muted: #9eb6a6;
+  --color-rule: #3e5546;
+  --color-control: #657f6b;
+  --color-accent: #a7cbb0;
+  --color-accent-ink: #152c1c;
+  --color-accent-soft: #314c39;
+  --color-focus: #afd7b6;
+  --color-error: #f3ada5;
+  --color-error-bg: #442b28;
+  --color-scrim: rgb(5 12 8 / 0.76);
+  --color-shadow: rgb(0 0 0 / 0.19);
+  --glass-rgb: 23 39 30;
+  --glass-border: rgb(198 220 202 / 0.16);
+  --card-background: rgb(40 61 47 / 0.58);
+  --card-highlight: rgb(43 68 51 / 0.88);
+  --shadow-panel: 0 12px 50px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(227 244 228 / 0.05);
+  --shadow-raised: 0 8px 24px rgb(0 0 0 / 0.18);
+  --wallpaper-sky: #2f4941;
+  --wallpaper-hill: #233f31;
+  --wallpaper-near: #13281c;
+}
+
+:root[data-wallpaper-tone='sky'] { --wallpaper-sky: #d5e5ed; --wallpaper-hill: #8faeba; --wallpaper-near: #53788a; }
+:root[data-wallpaper-tone='sand'] { --wallpaper-sky: #e9e5d4; --wallpaper-hill: #b8b696; --wallpaper-near: #8d9171; }
+:root[data-theme='dark'][data-wallpaper-tone='sky'] { --wallpaper-sky: #2a4354; --wallpaper-hill: #233c4b; --wallpaper-near: #122a36; }
+:root[data-theme='dark'][data-wallpaper-tone='sand'] { --wallpaper-sky: #454738; --wallpaper-hill: #363c29; --wallpaper-near: #232b1b; }
+:root[data-frosted='false'] { --glass-background: var(--color-surface); --glass-border: var(--color-rule); --card-background: var(--color-surface); --card-highlight: var(--color-paper); --glass-blur: 0px !important; }

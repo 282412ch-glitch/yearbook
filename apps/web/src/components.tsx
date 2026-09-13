@@ -35,8 +35,8 @@ export function PhotoViewer({ photos, initial, onClose }: { photos: RecordMedia[
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
   const photo = photos[index];
   if (!photo) return null;
-  return <dialog ref={ref} className="photo-dialog" onCancel={onClose} onClick={event => { if (event.target === ref.current) onClose(); }} aria-label="照片预览">
-    <div className="photo-toolbar"><span>{index + 1} / {photos.length}</span><a href={photo.originalUrl} target="_blank" rel="noreferrer" className="text-link">查看原图<ArrowUpRight size={16} /></a><button className="icon-button" aria-label="关闭照片" onClick={onClose}><X size={20} /></button></div>
+  return <dialog ref={ref} className="photo-dialog" onCancel={onClose} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setIndex(value => Math.max(0, Math.min(photos.length - 1, value + (event.key === 'ArrowLeft' ? -1 : 1)))); } }} onClick={event => { if (event.target === ref.current) onClose(); }} aria-label="照片预览">
+    <div className="photo-toolbar"><span aria-live="polite">{index + 1} / {photos.length}</span><small className="photo-keyboard-hint">← → 切换 · Esc 关闭</small><a href={photo.originalUrl} target="_blank" rel="noreferrer" className="text-link">查看原图<ArrowUpRight size={16} /></a><button className="icon-button" aria-label="关闭照片" onClick={onClose}><X size={20} /></button></div>
     <img src={photo.displayUrl} alt={photo.caption || photo.filename} width={photo.width} height={photo.height} /><div className="photo-footer"><button className="button secondary" disabled={index === 0} onClick={() => setIndex(i => i - 1)}>上一张</button><p>{photo.caption || photo.filename}</p><button className="button secondary" disabled={index === photos.length - 1} onClick={() => setIndex(i => i + 1)}>下一张</button></div>
   </dialog>;
 }
